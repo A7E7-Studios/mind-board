@@ -1,0 +1,31 @@
+[package]
+name = "mind-board"
+version = "0.1.0"
+description = "A minimal, local-first reference board"
+authors = ["A7E7 Studios"]
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/A7E7-Studios/mind-board"
+
+[lib]
+name = "mind_board_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde_json = "1"
+tempfile = "3"
+
+[dev-dependencies]
+tauri = { version = "2", features = ["test"] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

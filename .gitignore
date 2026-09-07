@@ -1,0 +1,11 @@
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/.tools/
+src-tauri/gen/
+test-results/
+playwright-report/
+.npm-cache/
+.cache/
+*.log
+*.local

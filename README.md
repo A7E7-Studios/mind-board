@@ -1,0 +1,92 @@
+# MindBoard
+
+A quiet place for your references. MindBoard is a minimal, local-first desktop reference board, released under the **MIT license**, including commercial use.
+
+An original application inspired by the reference-board workflow: put images on an infinite canvas, arrange them, and keep your ideas in view. No account, server, telemetry, or network connection is required at runtime.
+
+![MindBoard reference canvas](docs/screenshots/populated-board.png)
+
+## Features
+
+- Import multiple PNG, JPEG, WebP, GIF, or AVIF images; drag files onto the canvas or paste clipboard images.
+- Pan with Space + drag or the middle mouse button; zoom around the cursor with the wheel.
+- Select, Shift-select, marquee-select, move, proportionally resize, rotate, arrange, duplicate, and reorder references.
+- Lock references to prevent accidental edits; add and edit text notes.
+- Undo and redo document edits, including whole pointer gestures.
+- Save portable `.mindboard` files with embedded images; reopen them without their original source files.
+- Automatic local recovery in IndexedDB after each document edit.
+- Focus mode, fullscreen, and desktop always-on-top mode.
+- Keyboard shortcuts, accessible controls, and a compact, responsive interface.
+
+## Run locally
+
+Requires Node.js 22.12+ (or 24 LTS) and npm. Desktop development also requires Rust and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/), including the Microsoft C++ build tools and WebView2 on Windows.
+
+```sh
+npm ci
+npm run desktop:dev
+```
+
+For the browser version:
+
+```sh
+npm run dev
+```
+
+Open `http://127.0.0.1:1420`. Browser saving downloads a file; the desktop app uses native file dialogs. Always-on-top is available only in the desktop app.
+
+## Build
+
+```sh
+npm run desktop:build
+```
+
+Tauri places the executable and installers in `src-tauri/target/release/`. To build only the standalone executable:
+
+```sh
+npm run desktop:build -- --no-bundle
+```
+
+The Windows executable uses the system WebView2 runtime. It does not include a browser engine. Release builds enable link-time optimization and strip symbols; the frontend uses vanilla TypeScript with no UI framework or image-processing runtime.
+
+## Testing
+
+```sh
+npm run check
+npm run test:native
+npm run test:desktop
+```
+
+`check` runs TypeScript, a production frontend build, model/storage unit tests, and the Playwright browser suite. Playwright uses installed Microsoft Edge by default. Set `PLAYWRIGHT_CHANNEL=chromium` and run `npx playwright install chromium` to use Playwright's Chromium instead.
+
+`test:native` verifies the actual Rust IPC handlers and filesystem operations. `test:desktop` drives the built Windows application with Tauri WebDriver and a matching EdgeDriver; see [native test setup](src-tauri/tests/README.md). See [testing and coverage](docs/testing.md) for the complete feature matrix and verification limits.
+
+## Keyboard shortcuts
+
+| Action | Shortcut |
+| --- | --- |
+| Import images / add note | `I` / `N` |
+| Pan | `Space` + drag, or middle drag |
+| Zoom / actual size / fit all | Mouse wheel / `1` / `F` |
+| Select all / duplicate | `Ctrl` or `⌘` + `A` / `D` |
+| Undo / redo | `Ctrl` or `⌘` + `Z` / `Shift Z` |
+| Open / save / new board | `Ctrl` or `⌘` + `O` / `S` / `N` |
+| Delete unlocked selection | `Delete` or `Backspace` |
+| Focus mode | `Tab` while the canvas is focused |
+| Fullscreen | `F11` |
+| Deselect / cancel gesture / close dialog | `Escape` |
+| Shortcut help | `?` |
+
+Tab navigates controls normally when a control has focus. Text fields keep their editing shortcuts. Double-click a note to edit it.
+
+## Files and recovery
+
+Boards use a versioned JSON format containing embedded raster images and geometry. They support up to 2,000 references, 20 MiB per image, and 100 MiB per board file. Individual imported images are limited to 80 megapixels. SVG, remote URLs, executable content, and invalid geometry are rejected.
+
+Recovery keeps the current board on this device; it is not a backup archive. Saving a `.mindboard` file is the way to keep and share a board. New and Open replace the current recovery document; Undo can restore the preceding document in the same session. Clearing application/browser storage removes recovery. Images remain in memory while the board is open, so memory use grows with decoded image dimensions and the number of references.
+
+This first release focuses on image arrangement and notes. It does not yet include cropping, PDF/video import, image export, file associations, or cloud collaboration. Windows is the locally verified desktop platform; other Tauri targets require their own platform verification.
+
+## License
+
+[MIT](LICENSE) © 2026 A7E7 Studios. Image rights remain with their respective owners. MindBoard is independent of PureRef and does not contain PureRef code or assets. Dependency licenses are listed in [third-party notices](THIRD_PARTY_NOTICES.txt); regenerate them with `node scripts/third-party-notices.mjs` after dependency changes.

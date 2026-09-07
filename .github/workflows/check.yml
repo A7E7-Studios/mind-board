@@ -1,0 +1,53 @@
+name: Validate MindBoard
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run check
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: npm run test:native
+      - run: npm run desktop:build -- --no-bundle
+      - name: Prepare Windows WebDriver
+        shell: pwsh
+        run: |
+          cargo install tauri-driver --locked --root src-tauri/.tools
+          $edgeBinary = "${env:ProgramFiles(x86)}/Microsoft/Edge/Application/msedge.exe"
+          $edgeVersion = (Get-Item -LiteralPath $edgeBinary).VersionInfo.FileVersion
+          New-Item -ItemType Directory -Force src-tauri/.tools/edge | Out-Null
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$edgeVersion/edgedriver_win64.zip" -OutFile src-tauri/.tools/edge.zip
+          Expand-Archive -LiteralPath src-tauri/.tools/edge.zip -DestinationPath src-tauri/.tools/edge -Force
+      - run: npm run test:desktop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-test-reports
+          path: |
+            playwright-report/
+            test-results/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MindBoard-Windows
+          path: src-tauri/target/release/mind-board.exe

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-board-file"
+description = "Enables the save_board_file command without any pre-configured scope."
+commands.allow = ["save_board_file"]
+
+[[permission]]
+identifier = "deny-save-board-file"
+description = "Denies the save_board_file command without any pre-configured scope."
+commands.deny = ["save_board_file"]

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-board-file"
+description = "Enables the open_board_file command without any pre-configured scope."
+commands.allow = ["open_board_file"]
+
+[[permission]]
+identifier = "deny-open-board-file"
+description = "Denies the open_board_file command without any pre-configured scope."
+commands.deny = ["open_board_file"]
