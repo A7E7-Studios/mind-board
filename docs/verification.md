@@ -1,12 +1,12 @@
 # Verification record
 
-Local validation of MindBoard 0.2.3 on 7 September 2026, Windows x64.
+Local validation of MindBoard 0.2.4 on 7 September 2026, Windows x64.
 
 | Check | Result |
 | --- | --- |
 | TypeScript and Vite production build | Passed |
 | Board model and persistence tests | 82 passed (73 model, 9 IndexedDB) |
-| Playwright end-to-end tests, Microsoft Edge | 94 passed, including 15 clipboard, 20 note/paste, and 5 image-quality scenarios |
+| Playwright end-to-end tests, Microsoft Edge | 105 passed, including 11 paste-position, 15 clipboard, 20 note/paste, and 5 image-quality scenarios |
 | Rust IPC/filesystem tests | 7 passed |
 | Packaged Windows app through WebDriver | 15 passed, including cross-process image and note clipboard, empty colored notes, full-height note editing, resize/zoom image detail, borderless startup, native window controls, failed-recovery close protection, and IPC permissions |
 | Rust formatting | Passed |
@@ -20,8 +20,10 @@ The 0.2.2 clipboard tests cover all five image formats, full source dimensions a
 
 The 0.2.3 note clipboard tests preserve text, color, font size, alignment, bold styling, dimensions, and rotation through copy/paste, undo/redo, and recovery. They cover empty and locked notes, fresh unlocked copies, literal HTML and Unicode text, the 100,000-character boundary, external text-editor paste, formatting-control focus, and invalid metadata fallback. The native Windows app passes the same Unicode text to an independent Windows Forms consumer, then pastes styled and empty notes back with their formatting and dimensions intact. Both clipboard backups were restored successfully. The helper uses ASCII-escaped JSON to transport Unicode independently of the Windows console code page.
 
+The 0.2.4 placement tests center pasted file/HTML images, styled and empty notes, and plain text on the mouse over the canvas. They check pan/zoom conversion, hover over existing references, no-pointer/outside-canvas/blur center fallback, target capture before delayed image decoding, unchanged viewport, and text-editor isolation. The packaged Windows app verifies real Ctrl+V positions for both images and notes at the mouse (346, 332) and viewport-center fallback (640, 425.5), with errors below 0.01 CSS pixels. Clipboard restoration succeeds after both native scenarios.
+
 Browser tests include real PNG/JPEG/WebP/GIF/AVIF decoding, exact-limit 20 MiB image recovery, combined-board 100 MiB rejection, interrupted pointer gestures, saved-file variants with reused IDs, inline note editing and formatting, long-note sizing, storage unavailability, file round trips, and all exposed browser controls. Real text clipboard paste is tested on the canvas and inside editors. Synthetic image clipboard and drop events preserve exact source bytes through resize/save/reload. Screenshot pixel contrast verifies sharp detail after shrinking images from 480 to 120 board pixels and ordinary wheel zoom back to source resolution, at 100% and 150% display scaling. Deliberately downsampled pixels provide a negative control. The optional Original pixels command also checks physical dimensions and alignment without changing the document. A private user-provided screenshot was checked locally through resize and ordinary wheel zoom at both display scales; it is not included in the repository or release. Headless Edge did not reproduce the old compositing hint's blur, so that specific cause remains an inference rather than a reproduced failure.
 
-Production frontend: approximately 60 KB JavaScript and 16 KB CSS before compression, around 24 KB combined after gzip. These sizes exclude imported user images. The Windows x64 executable is 3,206,144 bytes (3.06 MiB). An NSIS installer and a portable ZIP with license notices were built and their contents verified. The native WebView2 screenshot retains alternating source pixels after resizing and ordinary wheel zoom; the deliberately downsampled control loses that detail. Native OS verification and exact coverage limits are recorded in [desktop verification](../src-tauri/tests/README.md).
+Production frontend: approximately 62 KB JavaScript and 16 KB CSS before compression, around 24 KB combined after gzip. These sizes exclude imported user images. The Windows x64 executable is 3,206,144 bytes (3.06 MiB). An NSIS installer and a portable ZIP with license notices were built and their contents verified. The native WebView2 screenshot retains alternating source pixels after resizing and ordinary wheel zoom; the deliberately downsampled control loses that detail. Native OS verification and exact coverage limits are recorded in [desktop verification](../src-tauri/tests/README.md).
 
-Version 0.2.3 at commit `9cc57c3` passed all 198 automated checks in [clean Windows validation](https://github.com/A7E7-Studios/mind-board/actions/runs/34127387680), including independent Windows image and note clipboard round trips. Published installer and portable ZIP checksums match the locally tested artifacts. macOS/Linux desktop behavior remains unverified.
+Version 0.2.4 at commit `57ce731` passed all 209 automated checks in [clean Windows validation](https://github.com/A7E7-Studios/mind-board/actions/runs/34128753593), including native mouse-target and center-fallback clipboard placement. Published installer and portable ZIP checksums match the locally tested artifacts. macOS/Linux desktop behavior remains unverified.
