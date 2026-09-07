@@ -44,7 +44,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <button data-action="fullscreen" aria-label="Fullscreen">Fullscreen <kbd>F11</kbd></button>
       ${isDesktop ? '<button data-action="pin" aria-pressed="false">Always on top</button>' : ""}
       <div class="menu-divider"></div><button data-action="help" aria-label="Keyboard shortcuts">Keyboard shortcuts <kbd>?</kbd></button>
-      <p>MindBoard 0.2.0 · MIT licensed</p>
+      <p>MindBoard 0.2.1 · MIT licensed</p>
     </div>
     <section id="canvas" data-testid="canvas" aria-label="Reference board canvas" tabindex="0">
       <div id="world" role="listbox" aria-label="References" aria-multiselectable="true"></div>
@@ -637,7 +637,7 @@ function finishNote(cancel = false, focus = true): boolean {
   const editing = noteEdit;
   noteEdit = null;
   const text = editing.item.text?.trim() ?? "";
-  if (cancel || (editing.isNew && !text)) {
+  if (cancel) {
     if (editing.isNew) selected.delete(editing.item.id);
     render();
   } else {

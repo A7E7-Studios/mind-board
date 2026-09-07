@@ -19,6 +19,7 @@ An original application inspired by the reference-board workflow: put images on 
 - Select, Shift-select, marquee-select, move, proportionally resize, rotate, arrange, duplicate, and reorder references.
 - Lock references to prevent accidental edits; write colorful sticky notes directly on the canvas, with text size, alignment, and bold controls.
 - Paste text to create a note. Press Tab while editing to add another with the same formatting.
+- Leave a note empty to use it as a colored card. Click Done or outside the note to keep it; Escape cancels a new note.
 - Undo and redo document edits, including whole pointer gestures.
 - Save portable `.mindboard` files with embedded images; reopen them without their original source files.
 - Automatic local recovery in IndexedDB after each document edit.

@@ -1,6 +1,6 @@
 [package]
 name = "mind-board"
-version = "0.2.0"
+version = "0.2.1"
 description = "A minimal, local-first reference board"
 authors = ["A7E7 Studios"]
 edition = "2021"

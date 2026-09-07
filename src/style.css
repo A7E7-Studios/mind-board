@@ -811,22 +811,6 @@ dialog p {
   min-height: 39px;
   padding: 9px 16px;
 }
-textarea {
-  width: 100%;
-  resize: vertical;
-  min-height: 120px;
-  max-height: 50vh;
-  background: #1b1e22;
-  border: 1px solid #ffffff13;
-  color: #dfe4d9;
-  padding: 13px;
-  line-height: 1.6;
-  border-radius: 7px;
-  font-size: 14px;
-}
-textarea::placeholder {
-  color: #676f78;
-}
 #help-dialog {
   width: min(650px, calc(100vw - 32px));
 }

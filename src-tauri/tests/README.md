@@ -8,6 +8,8 @@ cargo test --manifest-path src-tauri/Cargo.toml
 
 The Windows desktop suite starts the actual application with Microsoft EdgeDriver matching the installed WebView2. It uses WebDriver HTTP directly, so no additional Node dependencies are required. It creates a fresh isolated WebView2 profile per run, waits for recovery initialization, and checks twelve scenarios: the native WebView, borderless/minimal defaults, the Always on top menu with native state readback, notes with undo/redo, image file imports, source-pixel detail after resize and wheel zoom, fullscreen/topmost and filesystem capability enforcement, malformed-save rejection through real Rust IPC, context-menu minimize/restore, canceling an armed window move, protection from a native close request after recovery failure, and closing the actual application window. It writes `test-results/desktop.png` before closing the test window. Session creation allows 120 seconds for cold WebView2 startup; errors identify the WebDriver method and path.
 
+Version 0.2.1 adds a thirteenth scenario for empty colored notes and full-height multiline editing. The final `index-DR0Yp1sy.js` build passes all thirteen locally: an empty sage note survives Done, Undo, and Redo, and the tall editor's height, note height, and scroll height all measure 997 pixels without the old half-viewport cap.
+
 The optional `DESKTOP_DRIVER=tauri` mode uses a workspace-local Tauri driver:
 
 ```sh

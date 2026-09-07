@@ -165,6 +165,38 @@ try {
     await click('Redo');
     await waitFor('return document.querySelectorAll(".board-item").length === 1', 'redo');
   });
+  await check('empty colored notes persist and tall note editing uses the full available height', async () => {
+    await click('Add note');
+    await click('Sage note');
+    const id = await execute('return document.querySelector(".note-editor").closest(".board-item").dataset.id');
+    await click('Done editing note');
+    await waitFor('return !document.querySelector(".note-editor") && document.querySelectorAll(".board-item.note").length === 2', 'empty colored note committed');
+    const selector = `[data-id="${id}"]`;
+    assert.equal(await execute('return document.querySelector(arguments[0]).dataset.noteColor', [selector]), 'sage');
+    assert.equal(await execute('return document.querySelector(arguments[0]).querySelector(".item-content").textContent', [selector]), '');
+    await click('Undo');
+    await waitFor('return document.querySelectorAll(".board-item.note").length === 1', 'empty note undone');
+    await click('Redo');
+    await waitFor('return document.querySelectorAll(".board-item.note").length === 2', 'empty note restored');
+    assert.equal(await execute('return document.querySelector(arguments[0]).dataset.noteColor', [selector]), 'sage');
+    const center = await execute('const box = document.querySelector(arguments[0]).getBoundingClientRect(); return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };', [selector]);
+    await request('POST', `/session/${session}/actions`, { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+      { type: 'pointerMove', duration: 0, x: center.x, y: center.y, origin: 'viewport' },
+      { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 },
+      { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 },
+    ] }] });
+    await waitFor('return !!document.querySelector(".note-editor")', 'empty note reopened inline');
+    await execute(`const editor = document.querySelector('.note-editor'); editor.value = arguments[0]; editor.dispatchEvent(new Event('input', { bubbles: true }));`, [Array.from({ length: 28 }, (_, index) => `Native note line ${index + 1}`).join('\n')]);
+    const dimensions = await execute(`const editor = document.querySelector('.note-editor'); const note = editor.closest('.board-item');
+      return { editorHeight: editor.clientHeight, noteHeight: note.clientHeight, scrollHeight: editor.scrollHeight, viewportHeight: innerHeight, maxHeight: getComputedStyle(editor).maxHeight };`);
+    launchDiagnostics.tallNoteEditor = dimensions;
+    assert(dimensions.noteHeight > dimensions.viewportHeight * 0.5, JSON.stringify(dimensions));
+    assert(dimensions.editorHeight >= dimensions.noteHeight - 2, JSON.stringify(dimensions));
+    assert(dimensions.scrollHeight <= dimensions.editorHeight + 2, JSON.stringify(dimensions));
+    await click('Done editing note');
+    await waitFor('return !document.querySelector(".note-editor")', 'tall note committed');
+    await click('Fit all');
+  });
   await check('imports a real image file through the native WebView', async () => {
     mkdirSync('src-tauri/.tools/fixtures', { recursive: true });
     const fixture = resolve('src-tauri/.tools/fixtures/reference.png');

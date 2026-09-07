@@ -98,7 +98,7 @@ test("N starts a focused canvas note and commits multiline text as one undoable 
   await expect(note(page)).toContainText("One clear idea\nA second line");
 });
 
-test("clicking outside commits a draft while empty and cancelled drafts disappear", async ({
+test("clicking outside keeps text and empty notes while Escape cancels a new draft", async ({
   page,
 }) => {
   await page.keyboard.press("n");
@@ -109,12 +109,126 @@ test("clicking outside commits a draft while empty and cancelled drafts disappea
   await page.keyboard.press("n");
   await expect(editor(page)).toBeFocused();
   await page.getByTestId("canvas").click({ position: { x: 20, y: 20 } });
-  await expect(note(page)).toHaveCount(1);
+  await expect(editor(page)).not.toBeVisible();
+  await expect(note(page)).toHaveCount(2);
+  expect((await downloadBoard(page)).board.items[1].text).toBe("");
   await page.keyboard.press("n");
   await editor(page).fill("This draft should be cancelled");
   await page.keyboard.press("Escape");
+  await expect(note(page)).toHaveCount(2);
+  await expect(note(page).first()).toContainText(
+    "Saved by clicking the canvas",
+  );
+});
+
+test("Done keeps an empty colored note through undo, redo, export, and recovery", async ({
+  page,
+}) => {
+  await page.keyboard.press("n");
+  await toolbar(page)
+    .getByRole("button", { name: "Sage note", exact: true })
+    .click();
+  await toolbar(page)
+    .getByRole("button", { name: "Done editing note", exact: true })
+    .click();
+  await expect(editor(page)).not.toBeVisible();
   await expect(note(page)).toHaveCount(1);
-  await expect(note(page)).toContainText("Saved by clicking the canvas");
+  const saved = (await downloadBoard(page)).board.items[0];
+  expect(saved).toMatchObject({
+    kind: "note",
+    name: "Note",
+    text: "",
+    noteColor: "sage",
+  });
+  await page.keyboard.press("Control+z");
+  await expect(note(page)).toHaveCount(0);
+  await page.keyboard.press("Control+Shift+z");
+  await expect(note(page)).toHaveCount(1);
+  expect((await downloadBoard(page)).board.items[0]).toEqual(saved);
+  await expect(page.locator("#save-status")).toHaveText("Saved on this device");
+  await page.reload();
+  await expect(page.locator("html")).toHaveAttribute("data-ready", "true");
+  expect((await downloadBoard(page)).board.items[0]).toEqual(saved);
+  await page.keyboard.press("n");
+  await toolbar(page)
+    .getByRole("button", { name: "Rose note", exact: true })
+    .click();
+  await editor(page).focus();
+  await page.keyboard.press("Escape");
+  await expect(note(page)).toHaveCount(1);
+  expect((await downloadBoard(page)).board.items[0]).toEqual(saved);
+});
+
+test("a tall note uses its available editing area for multiline bullets without internal scrolling", async ({
+  page,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const initial = {
+    version: 1,
+    name: "Long notes",
+    items: [
+      {
+        id: "tall-note",
+        kind: "note",
+        name: "Research",
+        text: "Research",
+        x: 200,
+        y: 120,
+        width: 400,
+        height: 600,
+        rotation: 0,
+        locked: false,
+        noteColor: "sage",
+        noteAlign: "center",
+        noteSize: "medium",
+        noteBold: false,
+      },
+    ],
+  };
+  const chooser = page.waitForEvent("filechooser");
+  await page.keyboard.press("Control+o");
+  await (
+    await chooser
+  ).setFiles({
+    name: "tall-note.mindboard",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(initial)),
+  });
+  await expect(note(page)).toHaveCount(1);
+  await note(page).dblclick();
+  await toolbar(page)
+    .getByRole("combobox", { name: "Note alignment", exact: true })
+    .selectOption("left");
+  await toolbar(page)
+    .getByRole("combobox", { name: "Note text size", exact: true })
+    .selectOption("small");
+  const bullets =
+    "Reference ideas\n\n• Natural light\n• Soft shadows\n• Warm highlights\n• Simple shapes\n• Quiet backgrounds\n• Clear silhouettes\n• Gentle contrast\n• A little texture\n• Room to breathe";
+  await editor(page).fill(bullets);
+  const assertEditorFits = async () => {
+    const metrics = await editor(page).evaluate((element) => ({
+      clientHeight: element.clientHeight,
+      scrollHeight: element.scrollHeight,
+      scrollTop: element.scrollTop,
+      width: element.clientWidth,
+      parentHeight: element.parentElement!.clientHeight,
+    }));
+    expect(metrics.clientHeight).toBe(metrics.parentHeight);
+    expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight + 1);
+    expect(metrics.scrollTop).toBe(0);
+    await expect(editor(page)).toHaveCSS("text-align", "left");
+  };
+  await assertEditorFits();
+  await editor(page).focus();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.insertText("• Keep details sharp");
+  await assertEditorFits();
+  await page.keyboard.press("Control+Enter");
+  await note(page).dblclick();
+  await expect(editor(page)).toHaveValue(`${bullets}\n• Keep details sharp`);
+  await assertEditorFits();
+  await page.screenshot({ path: testInfo.outputPath("tall-note-editor.png") });
 });
 
 test("Escape restores the original text and formatting of an existing note", async ({
