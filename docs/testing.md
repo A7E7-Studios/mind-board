@@ -11,6 +11,7 @@ The test layers are deliberately separate. Browser automation verifies the produ
 | AVIF | Supported by the webview; dedicated fixture decoding test |
 | Drop and clipboard import | Playwright DOM drag/clipboard events with real image bytes |
 | Image copy and paste | Real system clipboard PNG read by an independent consumer, original dimensions/transparency after resize, original compressed source on same-app paste, editor text-copy isolation, and clipboard failure feedback |
+| Note copy and paste | Real clipboard text in an independent consumer; styled and empty note round trips retain text, color, typography, geometry, and rotation; new unlocked IDs, undo/redo/recovery, editor text paste, and malformed metadata fallback |
 | Pan, anchored zoom, fit, reset | Pure transform tests plus pointer/wheel/button E2E |
 | Selection, Shift-select, marquee, select all | Playwright pointer and keyboard interactions |
 | Move and proportional resize | Playwright geometry assertions, one-step undo, gesture cancellation |

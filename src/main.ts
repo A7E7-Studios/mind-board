@@ -14,7 +14,12 @@ import {
   type View,
 } from "./board";
 import { loadRecovery, saveRecovery } from "./storage";
-import { copiedImageFromHtml, copyImage } from "./clipboard";
+import {
+  copiedImageFromHtml,
+  copiedNoteFromHtml,
+  copyImage,
+  copyNote,
+} from "./clipboard";
 import {
   isDesktop,
   openBoardFile,
@@ -45,7 +50,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <button data-action="fullscreen" aria-label="Fullscreen">Fullscreen <kbd>F11</kbd></button>
       ${isDesktop ? '<button data-action="pin" aria-pressed="false">Always on top</button>' : ""}
       <div class="menu-divider"></div><button data-action="help" aria-label="Keyboard shortcuts">Keyboard shortcuts <kbd>?</kbd></button>
-      <p>MindBoard 0.2.2 · MIT licensed</p>
+      <p>MindBoard 0.2.3 · MIT licensed</p>
     </div>
     <section id="canvas" data-testid="canvas" aria-label="Reference board canvas" tabindex="0">
       <div id="world" role="listbox" aria-label="References" aria-multiselectable="true"></div>
@@ -95,7 +100,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       ["Select an area", "Drag empty canvas"],
       ["Select all", "Ctrl / ⌘ A"],
       ["Duplicate", "Ctrl / ⌘ D"],
-      ["Copy selected image", "Ctrl / ⌘ C"],
+      ["Copy selected image or note", "Ctrl / ⌘ C"],
       ["Paste image or text", "Ctrl / ⌘ V"],
       ["Delete selection", "Delete"],
       ["Undo / redo", "Ctrl / ⌘ Z / Shift Z"],
@@ -168,6 +173,14 @@ const isEditing = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
   !!target.closest(
     'input,textarea,select,[contenteditable="true"],dialog,#note-toolbar',
+  );
+const isClipboardEditing = (target: EventTarget | null) =>
+  isEditing(target) &&
+  !(
+    !noteEdit &&
+    target instanceof HTMLElement &&
+    target.closest("#note-toolbar") &&
+    !target.closest('input,textarea,[contenteditable="true"]')
   );
 function toast(message: string) {
   $("#toast").textContent = message;
@@ -826,9 +839,16 @@ function showContextMenu(point: { x: number; y: number }, keyboard = false) {
     (selected.size
       ? `<div class="context-selection">${entry("Duplicate", "copy", "duplicate", "Ctrl D")}${entry("Delete", "trash", "delete", "Del", locked)}${entry("Arrange", "grid", "arrange")}${entry(locked ? "Unlock selection" : "Lock selection", "lock", "lock")}${entry("Rotate left", "rotate", "rotate-left", "", locked)}${entry("Rotate right", "rotate", "rotate-right", "", locked)}${entry("Bring to front", "front", "front", "", locked)}${entry("Send to back", "back", "back", "", locked)}</div>${divider}`
       : "") +
-    (targets.length === 1 && targets[0].kind === "image"
-      ? entry("Copy image", "copy", "copy-image", "Ctrl C") +
-        entry("Original pixels", "image", "original-pixels") +
+    (targets.length === 1
+      ? entry(
+          targets[0].kind === "image" ? "Copy image" : "Copy note",
+          "copy",
+          "copy-selection",
+          "Ctrl C",
+        ) +
+        (targets[0].kind === "image"
+          ? entry("Original pixels", "image", "original-pixels")
+          : "") +
         divider
       : "") +
     entry("Import images", "image", "import", "I") +
@@ -880,16 +900,19 @@ async function action(name: string) {
   }
   try {
     switch (name) {
-      case "copy-image": {
-        const images = history.board.items.filter((item) =>
+      case "copy-selection": {
+        const items = history.board.items.filter((item) =>
           selected.has(item.id),
         );
-        if (images.length !== 1 || images[0].kind !== "image") {
-          toast("Select one image to copy.");
+        if (items.length !== 1) {
+          toast("Select one image or note to copy.");
           break;
         }
-        await copyImage(images[0].src!);
-        toast("Image copied. Paste into MindBoard or another app.");
+        if (items[0].kind === "image") await copyImage(items[0].src!);
+        else await copyNote(items[0]);
+        toast(
+          `${items[0].kind === "image" ? "Image" : "Note"} copied. Paste into MindBoard or another app.`,
+        );
         break;
       }
       case "import":
@@ -1059,7 +1082,7 @@ async function action(name: string) {
     }
   } catch (error) {
     toast(
-      `Could not ${name === "open" ? "open board" : name === "save" ? "save board" : name === "copy-image" ? "copy image" : "complete action"}: ${(error as Error).message || String(error)}`,
+      `Could not ${name === "open" ? "open board" : name === "save" ? "save board" : name === "copy-selection" ? "copy selection" : "complete action"}: ${(error as Error).message || String(error)}`,
     );
   }
 }
@@ -1407,10 +1430,29 @@ canvas.addEventListener("drop", (e) => {
   );
 });
 document.addEventListener("paste", (e) => {
-  if (isEditing(e.target) || !ready) return;
-  const original = copiedImageFromHtml(
-    e.clipboardData?.getData("text/html") ?? "",
-  );
+  if (isClipboardEditing(e.target) || !ready) return;
+  const html = e.clipboardData?.getData("text/html") ?? "";
+  const note = copiedNoteFromHtml(html);
+  if (note) {
+    e.preventDefault();
+    if (!finishNote()) return;
+    finishGesture(false);
+    const p = center();
+    const item = {
+      ...note,
+      id: crypto.randomUUID(),
+      locked: false,
+      x: p.x - note.width / 2 + 24,
+      y: p.y - note.height / 2 + 24,
+    };
+    if (commit({ ...history.board, items: [...history.board.items, item] })) {
+      selected = new Set([item.id]);
+      render();
+      canvas.focus({ preventScroll: true });
+    }
+    return;
+  }
+  const original = copiedImageFromHtml(html);
   if (original) {
     e.preventDefault();
     void importImages([original]);
@@ -1439,7 +1481,9 @@ document.addEventListener("paste", (e) => {
   }
 });
 document.addEventListener("keydown", (e) => {
-  if (!ready || isEditing(e.target)) return;
+  const copying = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c";
+  if (!ready || (copying ? isClipboardEditing(e.target) : isEditing(e.target)))
+    return;
   if ((e.shiftKey && e.key === "F10") || e.key === "ContextMenu") {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
@@ -1484,7 +1528,7 @@ document.addEventListener("keydown", (e) => {
         o: "open",
         n: "new",
         d: "duplicate",
-        c: "copy-image",
+        c: "copy-selection",
         z: e.shiftKey ? "redo" : "undo",
         y: "redo",
         ...(isDesktop ? { q: "close-window" } : {}),

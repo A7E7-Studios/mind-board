@@ -15,6 +15,7 @@ An original application inspired by the reference-board workflow: put images on 
 - A borderless, plain canvas by default. Right-click for tools; press Tab to reveal the full interface.
 - Import multiple PNG, JPEG, WebP, GIF, or AVIF images; drag files onto the canvas or paste clipboard images.
 - Select an image and press Ctrl+C (or right-click → Copy image), then paste it into MindBoard or another app that accepts images. Copying retains the original resolution and transparency.
+- Copy a selected note with Ctrl+C or right-click → Copy note. Pasting into MindBoard preserves its color, styling, size, and rotation, including empty notes; other apps receive its text.
 - Pan with Space + drag or the middle mouse button; zoom around the cursor with the wheel.
 - Images retain their original pixels when resized. Zoom in to see the detail; double-click an image for a one-to-one pixel view.
 - Select, Shift-select, marquee-select, move, proportionally resize, rotate, arrange, duplicate, and reorder references.
@@ -85,7 +86,7 @@ npm run test:desktop
 | Zoom / canvas zoom 100% / fit all | Mouse wheel / `1` / `F` |
 | View original image pixels | Double-click an image |
 | Select all / duplicate | `Ctrl` or `⌘` + `A` / `D` |
-| Copy selected image / paste image or text | `Ctrl` or `⌘` + `C` / `V` |
+| Copy selected image or note / paste | `Ctrl` or `⌘` + `C` / `V` |
 | Undo / redo | `Ctrl` or `⌘` + `Z` / `Shift Z` |
 | Open / save / new board | `Ctrl` or `⌘` + `O` / `S` / `N` |
 | Delete unlocked selection | `Delete` or `Backspace` |

@@ -372,6 +372,58 @@ try {
     clipboardProbe = undefined;
     await click('Fit all');
   });
+  await check('notes copy as Windows text and paste with formatting, including empty notes', async () => {
+    const probe = await startClipboardProbe();
+    const fixture = 'Native note clipboard — café\nA second line.';
+    const shortcut = key => request('POST', `/session/${session}/actions`, { actions: [{ type: 'key', id: 'keyboard', actions: [
+      { type: 'keyDown', value: '\uE009' }, { type: 'keyDown', value: key }, { type: 'keyUp', value: key }, { type: 'keyUp', value: '\uE009' },
+    ] }] });
+    const selectedNote = () => execute(`const note = document.querySelector('.board-item.note.selected'); if (!note) return null;
+      return { text: note.querySelector('.item-content').textContent, color: note.dataset.noteColor,
+        weight: note.style.getPropertyValue('--note-weight'), align: note.style.getPropertyValue('--note-align'),
+        fontSize: note.style.getPropertyValue('--note-font-size'), width: note.style.width, height: note.style.height };`);
+    await click('Add note');
+    await click('Rose note');
+    if (await execute('return document.querySelector("[data-note-bold]").getAttribute("aria-pressed") !== "true"')) await click('Bold note text');
+    await execute(`for (const [selector, value] of [['#note-size', 'large'], ['#note-align', 'left']]) {
+      const field = document.querySelector(selector); field.value = value; field.dispatchEvent(new Event('change', { bubbles: true }));
+    }`);
+    await writeNote(fixture);
+    const original = await selectedNote();
+    assert(original.text === fixture && original.color === 'rose' && original.weight === '650' && original.align === 'left', 'Formatted fixture must be ready before copying');
+    for (const empty of [false, true]) {
+      if (empty) {
+        await click('Add note');
+        await writeNote('');
+      }
+      const expected = await selectedNote();
+      const count = await execute('return document.querySelectorAll(".board-item.note").length');
+      await execute('document.querySelector("#canvas").focus()');
+      await shortcut('c');
+      await waitFor('return document.querySelector("#toast").textContent.includes("Note copied")', 'note copy completed');
+      let textMatches = false;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const copied = await probe.command('read-text');
+        textMatches = typeof copied.text === 'string' && copied.text.replace(/\r\n/g, '\n') === expected.text;
+        if (textMatches) break;
+        await delay(100);
+      }
+      assert(textMatches, 'Independent Windows clipboard text must match the generated note');
+      // A nonempty exact fixture match identifies test-owned clipboard content.
+      // For empty text, also verify the structured note paste before claiming.
+      if (!empty) await probe.command('claim');
+      await shortcut('v');
+      await waitFor(`return document.querySelectorAll('.board-item.note').length === ${count + 1}`, 'copied note pasted into board');
+      const pasted = await selectedNote();
+      assert(JSON.stringify(pasted) === JSON.stringify(expected), 'Pasted note must preserve fixture text, formatting, and dimensions');
+      if (empty) await probe.command('claim');
+      launchDiagnostics[empty ? 'emptyNoteClipboard' : 'formattedNoteClipboard'] = { verified: true, textLength: expected.text.length, color: expected.color, weight: expected.weight, align: expected.align, width: expected.width, height: expected.height };
+    }
+    launchDiagnostics.noteClipboardRestore = await probe.command('restore');
+    probe.child.stdin.end();
+    clipboardProbe = undefined;
+    await click('Fit all');
+  });
   await check('native window permissions work and arbitrary filesystem access is denied', async () => {
     const response = await request('POST', `/session/${session}/execute/async`, {
       script: `const done = arguments[arguments.length - 1]; (async () => {

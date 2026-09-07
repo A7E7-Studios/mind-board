@@ -54,6 +54,10 @@ Write-Reply @{ ready = $true; savedFormats = $savedCount; failedFormats = $faile
 try {
   while ($null -ne ($command = [Console]::ReadLine())) {
     switch ($command) {
+      'read-text' {
+        $readSequence = [ClipboardSequence]::GetClipboardSequenceNumber()
+        Write-Reply @{ text = [System.Windows.Forms.Clipboard]::GetText([System.Windows.Forms.TextDataFormat]::UnicodeText) }
+      }
       'read' {
         $readSequence = [ClipboardSequence]::GetClipboardSequenceNumber()
         $bitmap = [System.Windows.Forms.Clipboard]::GetImage()

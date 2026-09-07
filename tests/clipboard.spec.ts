@@ -470,7 +470,7 @@ test("copying selected text in the board title or note editor retains native tex
   await expect(page.getByTestId("board-item")).toHaveCount(2);
 });
 
-test("no selection, multiple images, and notes never copy an arbitrary image", async ({
+test("no selection or multiple items never copy an arbitrary reference", async ({
   page,
 }) => {
   const sentinel = "Keep existing clipboard";
@@ -500,8 +500,258 @@ test("no selection, multiple images, and notes never copy an arbitrary image", a
     .getByRole("textbox", { name: "Note text", exact: true })
     .fill("A note");
   await page.keyboard.press("Control+Enter");
+  await page.keyboard.press("Control+a");
   await page.locator(".board-item.note").click({ button: "right" });
+  await expect(page.locator(".board-item.selected")).toHaveCount(3);
   await checkUnavailable();
+});
+
+async function openNoteFixture(page: Page, text: string, locked = false) {
+  const item = {
+    id: "clipboard-note",
+    kind: "note",
+    name: text.slice(0, 80) || "Note",
+    text,
+    x: 120,
+    y: 100,
+    width: 420,
+    height: 560,
+    rotation: 90,
+    locked,
+    noteColor: "lavender",
+    noteSize: "small",
+    noteAlign: "right",
+    noteBold: true,
+  };
+  const chooser = page.waitForEvent("filechooser");
+  await page.keyboard.press("Control+o");
+  await (
+    await chooser
+  ).setFiles({
+    name: "note.mindboard",
+    mimeType: "application/json",
+    buffer: Buffer.from(
+      JSON.stringify({ version: 1, name: "Clipboard notes", items: [item] }),
+    ),
+  });
+  await expect(page.locator(".board-item.note")).toHaveCount(1);
+  await page.locator(".board-item.note").click();
+  return item;
+}
+
+for (const text of ["Grüße 🎨\nKeep <b>literal text</b> & details.", ""]) {
+  test(`${text ? "styled" : "empty"} notes retain formatting and geometry through real clipboard copy and paste`, async ({
+    page,
+  }) => {
+    const original = await openNoteFixture(page, text);
+    const before = await exportBoard(page);
+    await page.keyboard.press("Control+c");
+    await expect(page.locator("#toast")).toContainText(/copied/i);
+    expect(await exportBoard(page)).toEqual(before);
+    const external = await consumer(page);
+    await external.bringToFront();
+    // Windows standard text clipboard uses CRLF while textarea values use LF.
+    expect(
+      (await external.evaluate(() => navigator.clipboard.readText())).replace(
+        /\r\n/g,
+        "\n",
+      ),
+    ).toBe(text);
+    const html = await external.evaluate(async () =>
+      (await (await navigator.clipboard.read())[0].getType("text/html")).text(),
+    );
+    expect(html).toContain("data-mindboard-note=");
+    await external.setContent(
+      '<textarea aria-label="External text editor"></textarea>',
+    );
+    await external
+      .getByRole("textbox", { name: "External text editor" })
+      .focus();
+    await external.keyboard.press("Control+v");
+    await expect(
+      external.getByRole("textbox", { name: "External text editor" }),
+    ).toHaveValue(text);
+    await external.close();
+    await page.bringToFront();
+    await page.getByTestId("canvas").focus();
+    await page.keyboard.press("Control+v");
+    await expect(page.locator(".board-item.note")).toHaveCount(2);
+    const copied = (await exportBoard(page)).items[1];
+    for (const property of [
+      "kind",
+      "text",
+      "name",
+      "width",
+      "height",
+      "rotation",
+      "noteColor",
+      "noteSize",
+      "noteAlign",
+      "noteBold",
+    ] as const)
+      expect(copied[property]).toEqual(original[property]);
+    expect(copied.id).not.toBe(original.id);
+    await page.keyboard.press("Control+z");
+    expect(await exportBoard(page)).toEqual(before);
+    await page.keyboard.press("Control+Shift+z");
+    expect((await exportBoard(page)).items[1]).toEqual(copied);
+    await expect(page.locator("#save-status")).toHaveText(
+      "Saved on this device",
+    );
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-ready", "true");
+    expect((await exportBoard(page)).items[1]).toEqual(copied);
+  });
+}
+
+test("Copy note works for a locked note and pasting into a note editor inserts plain text", async ({
+  page,
+}) => {
+  const text = "Copied note\nPlain text in editors";
+  await openNoteFixture(page, text, true);
+  await page.locator(".board-item.note").click({ button: "right" });
+  await expect(
+    page.getByRole("menuitem", { name: "Copy image", exact: true }),
+  ).toHaveCount(0);
+  const copy = page.getByRole("menuitem", { name: "Copy note", exact: true });
+  await expect(copy).toBeEnabled();
+  await copy.click();
+  await expect(page.locator("#toast")).toContainText(/copied/i);
+  await page.getByTestId("canvas").focus();
+  await page.keyboard.press("Control+v");
+  await expect(page.locator(".board-item.note")).toHaveCount(2);
+  const pasted = page.locator(".board-item.note").last();
+  await expect(pasted).not.toHaveClass(/locked/);
+  await pasted.dblclick();
+  const editor = page.getByRole("textbox", { name: "Note text", exact: true });
+  await editor.fill("Prefix: ");
+  await page.keyboard.press("Control+v");
+  await expect(editor).toHaveValue(`Prefix: ${text}`);
+  await expect(page.locator(".board-item.note")).toHaveCount(2);
+});
+
+test("invalid note clipboard metadata falls back to plain text without executing HTML", async ({
+  page,
+}) => {
+  const requests: string[] = [];
+  await page.context().route("https://clipboard.invalid/**", (route) => {
+    requests.push(route.request().url());
+    return route.fulfill({ body: "" });
+  });
+  const validShape = {
+    id: "untrusted-note",
+    kind: "note",
+    name: "Untrusted",
+    text: "Untrusted",
+    x: 0,
+    y: 0,
+    width: 280,
+    height: 280,
+    rotation: 0,
+    locked: false,
+    noteColor: "sage",
+    noteBold: true,
+  };
+  const markers = [
+    "%E0%A4",
+    encodeURIComponent(JSON.stringify({ ...validShape, width: -1 })),
+    encodeURIComponent(
+      JSON.stringify({ ...validShape, noteColor: "invalid-color" }),
+    ),
+  ];
+  for (const [index, marker] of markers.entries()) {
+    await page.evaluate(
+      ({ marker, index }) => {
+        const data = new DataTransfer();
+        data.setData("text/plain", `Readable fallback ${index}`);
+        data.setData(
+          "text/html",
+          `<div data-mindboard-note="${marker}">Untrusted formatting</div><img src="https://clipboard.invalid/note"><script>document.documentElement.dataset.clipboardExecuted="yes"</script>`,
+        );
+        document.dispatchEvent(
+          new ClipboardEvent("paste", {
+            clipboardData: data,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      },
+      { marker, index },
+    );
+    await expect(page.locator(".board-item.note")).toHaveCount(index + 1);
+    await expect(page.locator(".board-item.note").last()).toContainText(
+      `Readable fallback ${index}`,
+    );
+    const saved = (await exportBoard(page)).items[index];
+    expect(saved.noteColor).toBe("yellow");
+    expect(saved.noteBold).toBe(false);
+  }
+  await expect(page.locator("html")).not.toHaveAttribute(
+    "data-clipboard-executed",
+    "yes",
+  );
+  expect(requests).toEqual([]);
+});
+
+test("a maximum-length Unicode note roundtrips through the real clipboard without truncation", async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  const text = "🎨".repeat(50_000);
+  expect(text.length).toBe(100_000);
+  const original = await openNoteFixture(page, text);
+  await page.keyboard.press("Control+c");
+  await expect(page.locator("#toast")).toContainText(/copied/i);
+  expect(
+    (await page.evaluate(() => navigator.clipboard.readText())).length,
+  ).toBe(100_000);
+  await page.keyboard.press("Control+v");
+  await expect(page.locator(".board-item.note")).toHaveCount(2);
+  const copied = (await exportBoard(page)).items[1];
+  expect(createHash("sha256").update(copied.text).digest("hex")).toBe(
+    createHash("sha256").update(text).digest("hex"),
+  );
+  expect(copied).toMatchObject({
+    name: original.name,
+    noteColor: original.noteColor,
+    noteBold: original.noteBold,
+    noteSize: original.noteSize,
+    noteAlign: original.noteAlign,
+    width: original.width,
+    height: original.height,
+    rotation: original.rotation,
+  });
+});
+
+test("copy and paste work from a selected note's formatting toolbar while active edits stay protected", async ({
+  page,
+}) => {
+  await openNoteFixture(page, "Toolbar copy");
+  const swatch = page.getByRole("button", { name: "Sage note", exact: true });
+  await swatch.click();
+  await expect(swatch).toBeFocused();
+  await page.keyboard.press("Control+c");
+  await expect(page.locator("#toast")).toContainText(/copied/i);
+  await page.keyboard.press("Control+v");
+  await expect(page.locator(".board-item.note")).toHaveCount(2);
+  expect((await exportBoard(page)).items[1]).toMatchObject({
+    text: "Toolbar copy",
+    noteColor: "sage",
+  });
+  await page.keyboard.press("n");
+  const editor = page.getByRole("textbox", { name: "Note text", exact: true });
+  await editor.fill("Draft remains active");
+  await page.getByRole("button", { name: "Blue note", exact: true }).click();
+  await page.evaluate(() =>
+    navigator.clipboard.writeText("Text clipboard sentinel"),
+  );
+  await page.keyboard.press("Control+c");
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "Text clipboard sentinel",
+  );
+  await page.keyboard.press("Control+v");
+  await expect(page.locator(".board-item.note")).toHaveCount(3);
+  await expect(editor).toBeVisible();
 });
 
 test("a denied clipboard write shows an actionable error and preserves the board", async ({

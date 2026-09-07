@@ -1,4 +1,42 @@
-import { supportedImage } from "./board";
+import { parseBoard, supportedImage, type Item } from "./board";
+
+/** Validate our companion data without rendering clipboard HTML. */
+export function copiedNoteFromHtml(html: string): Item | null {
+  if (html.length > 2_000_000) return null;
+  const match = /<div\s+data-mindboard-note="([^"<>]+)"\s*>/i.exec(html);
+  if (!match) return null;
+  try {
+    const value = JSON.parse(decodeURIComponent(match[1]));
+    if (value?.kind !== "note") return null;
+    return parseBoard(
+      JSON.stringify({ version: 1, name: "Clipboard", items: [value] }),
+    ).items[0];
+  } catch {
+    return null;
+  }
+}
+
+export async function copyNote(item: Item): Promise<void> {
+  if (!navigator.clipboard?.write || typeof ClipboardItem === "undefined")
+    throw new Error("Note copying is unavailable in this browser.");
+  const text = item.text ?? "";
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\r?\n/g, "<br>");
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      "text/plain": new Blob([text], { type: "text/plain" }),
+      "text/html": new Blob(
+        [
+          `<div data-mindboard-note="${encodeURIComponent(JSON.stringify(item))}">${escaped}</div>`,
+        ],
+        { type: "text/html" },
+      ),
+    }),
+  ]);
+}
 
 function sourceBytes(src: string): Uint8Array<ArrayBuffer> {
   const binary = atob(src.slice(src.indexOf(",") + 1));
