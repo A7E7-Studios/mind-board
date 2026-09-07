@@ -6,7 +6,9 @@ function Write-Stage([string]$Name) {
   [Console]::Error.Flush()
 }
 function Write-Reply($Value) {
-  [Console]::Out.WriteLine((ConvertTo-Json -InputObject $Value -Compress -Depth 4))
+  # Console encoding can be the Windows code page even when Node expects UTF-8.
+  # ASCII-only JSON preserves all Unicode text independently of that encoding.
+  [Console]::Out.WriteLine((ConvertTo-Json -InputObject $Value -Compress -Depth 4 -EscapeHandling EscapeNonAscii))
   [Console]::Out.Flush()
 }
 Write-Stage 'script-start'
