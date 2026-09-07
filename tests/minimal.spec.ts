@@ -278,3 +278,32 @@ test("contextual rotation, locking and view commands work on the minimal canvas"
   await command(page, "Fit all").click();
   await expect(item).toBeInViewport({ ratio: 1 });
 });
+
+test("Original pixels is only available for one selected image", async ({
+  page,
+}) => {
+  const assertUnavailable = async () => {
+    const action = command(page, "Original pixels");
+    if (await action.count()) await expect(action).toBeDisabled();
+  };
+  await openContextMenu(page);
+  await assertUnavailable();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("n");
+  await page
+    .getByRole("textbox", { name: "Note text", exact: true })
+    .fill("A note has no source image pixels");
+  await page.keyboard.press("Control+Enter");
+  await page.locator(".board-item.note").click({ button: "right" });
+  await assertUnavailable();
+  await page.keyboard.press("Escape");
+  await importImages(page, ["one.png", "two.png"]);
+  await boardItem(page, "two.png").click({ button: "right" });
+  await expect(page.locator(".board-item.selected")).toHaveCount(2);
+  await assertUnavailable();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await boardItem(page, "two.png").click({ button: "right" });
+  await expect(page.locator(".board-item.selected")).toHaveCount(1);
+  await expect(command(page, "Original pixels")).toBeEnabled();
+});

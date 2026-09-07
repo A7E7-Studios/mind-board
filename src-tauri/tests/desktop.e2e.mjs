@@ -175,6 +175,91 @@ try {
     assert.equal(await execute('return document.querySelector(".board-item img").naturalWidth > 0'), true);
     await click('Fit all');
   });
+  await check('resized images retain native pixel detail after ordinary wheel zoom', async () => {
+    await click('Reset zoom');
+    const source = await execute(`const canvas = document.createElement('canvas'); canvas.width = 1920; canvas.height = 512;
+      const context = canvas.getContext('2d'); context.fillStyle = 'white'; context.fillRect(0, 0, 1920, 512);
+      context.fillStyle = 'black'; for (let x = 0; x < 1920; x += 2) context.fillRect(x, 0, 1, 512);
+      return canvas.toDataURL('image/png');`);
+    const fixture = resolve('src-tauri/.tools/fixtures/native-detail.png');
+    writeFileSync(fixture, Buffer.from(source.split(',')[1], 'base64'));
+    const input = await request('POST', `/session/${session}/element`, { using: 'css selector', value: '#image-input' });
+    await request('POST', `/session/${session}/element/${input['element-6066-11e4-a52e-4f735466cecf']}/value`, { text: fixture });
+    await waitFor('return !!document.querySelector("img[alt=\\"native-detail.png\\"]")?.complete', 'detail pattern imported');
+    const imageSelector = 'img[alt="native-detail.png"]';
+    await waitFor('return document.querySelector("#save-status").textContent === "Saved on this device"', 'detail import committed');
+    await request('POST', `/session/${session}/execute/async`, { script: 'const done = arguments[arguments.length - 1]; requestAnimationFrame(() => requestAnimationFrame(() => done(true)));', args: [] });
+    const geometry = await execute(`const image = document.querySelector(arguments[0]); const box = image.getBoundingClientRect();
+      const handle = image.closest('.board-item').querySelector('[data-testid="resize-handle"]').getBoundingClientRect();
+      return { width: box.width, height: box.height, x: handle.x + handle.width / 2, y: handle.y + handle.height / 2 };`, [imageSelector]);
+    launchDiagnostics.imageResizeStart = geometry;
+    assert.equal(await execute('return document.elementFromPoint(Math.round(arguments[0]), Math.round(arguments[1]))?.dataset.testid', [geometry.x, geometry.y]), 'resize-handle', 'Resize handle must be the visible hit target');
+    assert.equal(geometry.width, 480);
+    await execute(`window.__resizeEvents = []; window.__resizeTrace = new AbortController(); for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'lostpointercapture']) {
+      document.querySelector('#canvas').addEventListener(type, event => { if (window.__resizeEvents.length < 100) window.__resizeEvents.push({ type, x: event.clientX, y: event.clientY, buttons: event.buttons, pointer: event.pointerId, target: event.target.className }); }, { signal: window.__resizeTrace.signal });
+    }`);
+    await request('POST', `/session/${session}/actions`, { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+      { type: 'pointerMove', duration: 0, x: Math.round(geometry.x), y: Math.round(geometry.y), origin: 'viewport' },
+      { type: 'pointerDown', button: 0 },
+      { type: 'pointerMove', duration: 0, x: Math.round(geometry.x - geometry.width * 0.75), y: Math.round(geometry.y - geometry.height * 0.75), origin: 'viewport' },
+      { type: 'pointerUp', button: 0 },
+    ] }] });
+    const smallWidth = await execute('return document.querySelector(arguments[0]).getBoundingClientRect().width', [imageSelector]);
+    launchDiagnostics.imageResizeEvents = await execute('window.__resizeTrace.abort(); delete window.__resizeTrace; const events = window.__resizeEvents; delete window.__resizeEvents; return events');
+    assert(Math.abs(smallWidth - 120) < 1, `Expected 120px placement after resize, received ${smallWidth}`);
+    await request('GET', `/session/${session}/screenshot`); // Ensure the small placement was actually rasterized.
+    for (let step = 0; step < 40; step++) {
+      const width = await execute('return document.querySelector(arguments[0]).getBoundingClientRect().width * devicePixelRatio', [imageSelector]);
+      if (Math.abs(width - 1920) < 0.05) break;
+      await execute(`const box = document.querySelector(arguments[0]).getBoundingClientRect();
+        document.querySelector('#canvas').dispatchEvent(new WheelEvent('wheel', { bubbles: true, cancelable: true,
+          clientX: box.x + box.width / 2, clientY: box.y + box.height / 2, deltaY: -Math.min(100, Math.log(1920 / (box.width * devicePixelRatio)) / 0.002) }));`, [imageSelector]);
+      await request('POST', `/session/${session}/execute/async`, { script: 'const done = arguments[arguments.length - 1]; requestAnimationFrame(() => requestAnimationFrame(() => done(true)));', args: [] });
+    }
+    const physicalWidth = await execute('return document.querySelector(arguments[0]).getBoundingClientRect().width * devicePixelRatio', [imageSelector]);
+    assert(Math.abs(physicalWidth - 1920) < 0.1, `Expected original physical width, received ${physicalWidth}`);
+    assert.equal(await execute('return document.querySelector(arguments[0]).getAttribute("src")', [imageSelector]), source);
+    async function screenDetail() {
+      const screenshot = await request('GET', `/session/${session}/screenshot`);
+      const detail = await request('POST', `/session/${session}/execute/async`, {
+        script: `const [base64, selector, done] = arguments; (async () => {
+          const screenshot = new Image(); screenshot.src = 'data:image/png;base64,' + base64; await screenshot.decode();
+          const box = document.querySelector(selector).getBoundingClientRect();
+          const scaleX = screenshot.width / innerWidth, scaleY = screenshot.height / innerHeight;
+          const x = Math.round((box.x + box.width / 2) * scaleX) - 128;
+          const y = Math.round((box.y + box.height / 2) * scaleY) - 16;
+          const canvas = document.createElement('canvas'); canvas.width = screenshot.width; canvas.height = screenshot.height;
+          const context = canvas.getContext('2d'); context.drawImage(screenshot, 0, 0);
+          const pixels = context.getImageData(x, y, 256, 32).data;
+          let black = 0, white = 0, contrast = 0, pairs = 0;
+          for (let row = 0; row < 32; row++) for (let column = 0; column < 256; column++) {
+            const index = (row * 256 + column) * 4;
+            if (pixels[index] < 40) black++; if (pixels[index] > 215) white++;
+            if (column) { contrast += Math.abs(pixels[index] - pixels[index - 4]); pairs++; }
+          }
+          return { blackFraction: black / 8192, whiteFraction: white / 8192, adjacentContrast: contrast / pairs, dpr: devicePixelRatio, screenshotWidth: screenshot.width, physicalLeft: box.x * scaleX, physicalWidth: box.width * scaleX };
+        })().then(done, error => done({ failure: String(error) }));`, args: [screenshot, imageSelector],
+      });
+      return { screenshot, detail };
+    }
+    const { screenshot, detail } = await screenDetail();
+    writeFileSync('test-results/desktop-image-detail.png', Buffer.from(screenshot, 'base64'));
+    launchDiagnostics.imageDetail = detail;
+    assert.equal(detail.failure, undefined, detail.failure);
+    // Native window placement can land between physical pixels. Allow that
+    // interpolation while still requiring alternating dark/light detail;
+    // a downsampled placement raster produces uniform gray instead.
+    assert(detail.blackFraction > 0.45 && detail.whiteFraction > 0.45 && detail.adjacentContrast > 180, JSON.stringify(detail));
+    // Negative control: verify screenshot analysis detects real downsampling.
+    await request('POST', `/session/${session}/execute/async`, { script: `const [selector, done] = arguments;
+      const image = document.querySelector(selector); const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 128;
+      canvas.getContext('2d').drawImage(image, 0, 0, 480, 128); image.src = canvas.toDataURL('image/png'); image.decode().then(() => done(true), error => done(String(error)));`, args: [imageSelector] });
+    const negative = (await screenDetail()).detail;
+    launchDiagnostics.imageDetailNegativeControl = negative;
+    assert(negative.blackFraction < 0.05 && negative.whiteFraction < 0.05 && negative.adjacentContrast < 10, JSON.stringify(negative));
+    await execute('document.querySelector(arguments[0]).src = arguments[1]', [imageSelector, source]);
+    await click('Fit all');
+  });
   await check('native window permissions work and arbitrary filesystem access is denied', async () => {
     const response = await request('POST', `/session/${session}/execute/async`, {
       script: `const done = arguments[arguments.length - 1]; (async () => {

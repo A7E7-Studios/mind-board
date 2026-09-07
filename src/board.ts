@@ -36,7 +36,8 @@ const IMAGE_TYPES = new Set([
   "image/avif",
 ]);
 const MIN_ZOOM = 0.1;
-const MAX_ZOOM = 4;
+const MAX_ZOOM = 64;
+const MAX_FIT_ZOOM = 4;
 
 export function createBoard(): Board {
   return { version: 1, name: "Untitled board", items: [] };
@@ -292,7 +293,7 @@ export function fitView(items: Item[], width: number, height: number): View {
   const zoom = Math.max(
     MIN_ZOOM,
     Math.min(
-      MAX_ZOOM,
+      MAX_FIT_ZOOM,
       Math.max(1, width - 128) / box.width,
       Math.max(1, height - 128) / box.height,
     ),

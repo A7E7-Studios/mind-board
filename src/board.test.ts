@@ -379,9 +379,44 @@ describe("canvas geometry", () => {
     expect((point.y - changed.y) / changed.zoom).toBeCloseTo(
       (point.y - view.y) / view.zoom,
     );
-    expect(zoomAt(view, point, 1000).zoom).toBe(4);
+    expect(zoomAt(view, point, 1000).zoom).toBe(64);
     expect(zoomAt(view, point, 0.0001).zoom).toBe(0.1);
     expect(zoomAt(view, point, NaN)).toEqual(view);
+  });
+
+  it.each([3840, 7680, 16384])(
+    "can inspect a %ipx reference placed at 480px at its original resolution",
+    (naturalWidth) => {
+      const initial = { x: -40, y: 80, zoom: 1 };
+      const anchor = { x: 640, y: 400 };
+      const view = zoomAt(initial, anchor, naturalWidth / 480);
+      expect(480 * view.zoom).toBeCloseTo(naturalWidth);
+      expect((anchor.x - view.x) / view.zoom).toBeCloseTo(anchor.x - initial.x);
+      expect((anchor.y - view.y) / view.zoom).toBeCloseTo(anchor.y - initial.y);
+    },
+  );
+
+  it("keeps automatic fitting capped at 4x for small references", () => {
+    const item = image({ width: 1, height: 1 });
+    const fitted = fitView([item], 1280, 800);
+    expect(fitted.zoom).toBe(4);
+    expect((item.x + 0.5) * fitted.zoom + fitted.x).toBeCloseTo(640);
+    expect((item.y + 0.5) * fitted.zoom + fitted.y).toBeCloseTo(400);
+  });
+
+  it("keeps the pointer anchored when enlarged references hit the 64x ceiling", () => {
+    const initial = { x: -200, y: 300, zoom: 32 };
+    const anchor = { x: 600, y: 350 };
+    const maximum = zoomAt(initial, anchor, 8);
+    expect(maximum.zoom).toBe(64);
+    expect((anchor.x - maximum.x) / maximum.zoom).toBeCloseTo(
+      (anchor.x - initial.x) / initial.zoom,
+    );
+    expect((anchor.y - maximum.y) / maximum.zoom).toBeCloseTo(
+      (anchor.y - initial.y) / initial.zoom,
+    );
+    expect(zoomAt(maximum, anchor, 2)).toEqual(maximum);
+    expect(zoomAt(maximum, anchor, 0.5)).toEqual(initial);
   });
 
   it("arranges references without overlap or size changes and preserves locks", () => {

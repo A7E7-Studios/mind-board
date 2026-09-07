@@ -902,3 +902,63 @@ test("new and edited notes grow to keep their text readable", async ({
   expect((await bounds(note)).height).toBeGreaterThan(originalHeight);
   expect(await fitsText()).toBe(true);
 });
+
+for (const deviceScaleFactor of [1, 1.5]) {
+  test.describe(`Original pixels at ${deviceScaleFactor}× display scale`, () => {
+    test.use({ deviceScaleFactor });
+
+    test("double-click and the context action show source pixels without changing the board", async ({
+      page,
+    }) => {
+      const filename = "source-755x374.png";
+      await page
+        .locator("#image-input")
+        .setInputFiles(imageFile(filename, [100, 150, 180], 755, 374));
+      const item = boardItem(page, filename);
+      await expect(item).toBeVisible();
+      await expect(item.locator("img")).toHaveJSProperty("naturalWidth", 755);
+      expect(await page.evaluate(() => window.devicePixelRatio)).toBe(
+        deviceScaleFactor,
+      );
+      const exportBoard = async () => {
+        const downloadEvent = page.waitForEvent("download");
+        await page
+          .getByRole("button", { name: "Save board", exact: true })
+          .click();
+        const stream = await (await downloadEvent).createReadStream();
+        const chunks: Buffer[] = [];
+        for await (const chunk of stream!) chunks.push(Buffer.from(chunk));
+        return JSON.parse(Buffer.concat(chunks).toString());
+      };
+      const before = await exportBoard();
+      expect(before.items[0].width).toBe(480);
+      const assertOriginalPixels = async () => {
+        const box = await bounds(item);
+        expect(box.width * deviceScaleFactor).toBeCloseTo(755, 0);
+        expect(box.height * deviceScaleFactor).toBeCloseTo(374, 0);
+        expect(box.x * deviceScaleFactor).toBeCloseTo(
+          Math.round(box.x * deviceScaleFactor),
+          3,
+        );
+        expect(box.y * deviceScaleFactor).toBeCloseTo(
+          Math.round(box.y * deviceScaleFactor),
+          3,
+        );
+      };
+      await item.dblclick();
+      await assertOriginalPixels();
+      await page.getByRole("button", { name: "Zoom out", exact: true }).click();
+      expect((await bounds(item)).width * deviceScaleFactor).toBeLessThan(755);
+      await item.click({ button: "right" });
+      const action = page
+        .locator("#context-menu")
+        .getByRole("menuitem", { name: "Original pixels", exact: true });
+      await expect(action).toBeEnabled();
+      await action.click();
+      await assertOriginalPixels();
+      expect(await exportBoard()).toEqual(before);
+      await page.keyboard.press("Control+z");
+      await expect(page.getByTestId("board-item")).toHaveCount(0);
+    });
+  });
+}

@@ -5,7 +5,7 @@ A lightweight, local reference board with a borderless canvas and tools availabl
 - Import images, arrange and resize references, and pan or zoom around the board.
 - Add colorful sticky notes and edit them directly on the canvas.
 - Paste plain text onto the canvas to create a sticky note automatically.
-- Preserve original image resolution when importing and saving, with updated image rendering during zoom.
+- Keep the original image resolution through import, resize, and save. Zoom in for full detail, up to 64×; double-click an image for a one-to-one pixel view.
 - Undo and redo changes; save self-contained `.mindboard` files with embedded images.
 - Recover your latest board automatically on the same device.
 - Keep the window above other applications, enter fullscreen, or reveal optional controls with Tab.

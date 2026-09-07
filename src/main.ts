@@ -97,7 +97,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       ["Delete selection", "Delete"],
       ["Undo / redo", "Ctrl / ⌘ Z / Shift Z"],
       ["Fit all references", "F"],
-      ["Actual size", "1"],
+      ["Canvas zoom 100%", "1"],
+      ["Original image pixels", "Double-click image"],
       ["Open / save board", "Ctrl / ⌘ O / S"],
       ["New board", "Ctrl / ⌘ N"],
       ["Show / hide controls", "Tab"],
@@ -404,6 +405,56 @@ function fit(items = history.board.items) {
     view = fitView(items, canvas.clientWidth, canvas.clientHeight);
   }
   renderView();
+}
+async function originalPixels(item?: Item) {
+  item ??=
+    selected.size === 1
+      ? history.board.items.find(
+          (i) => selected.has(i.id) && i.kind === "image",
+        )
+      : undefined;
+  if (!item || item.kind !== "image") return;
+  const image = Array.from(
+    world.querySelectorAll<HTMLImageElement>(".board-item img"),
+  ).find((image) => image.parentElement?.dataset.id === item!.id);
+  if (!image) return;
+  await image.decode();
+  const current = history.board.items.find(
+    (candidate) => candidate.id === item!.id,
+  );
+  if (
+    !image.isConnected ||
+    !current ||
+    current.kind !== "image" ||
+    current.src !== item.src ||
+    current.x !== item.x ||
+    current.y !== item.y ||
+    current.width !== item.width ||
+    current.height !== item.height ||
+    current.rotation !== item.rotation
+  )
+    return;
+  const dpr = window.devicePixelRatio || 1;
+  const requested = image.naturalWidth / (item.width * dpr);
+  view = zoomAt(
+    view,
+    { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 },
+    requested / view.zoom,
+  );
+  view.x = canvas.clientWidth / 2 - (item.x + item.width / 2) * view.zoom;
+  view.y = canvas.clientHeight / 2 - (item.y + item.height / 2) * view.zoom;
+  renderView();
+  // Align the displayed image to physical pixels, including odd-sized captures
+  // and fractional Windows display scaling, to avoid half-pixel interpolation.
+  const rect = image.getBoundingClientRect();
+  view.x += Math.round(rect.left * dpr) / dpr - rect.left;
+  view.y += Math.round(rect.top * dpr) / dpr - rect.top;
+  renderView();
+  toast(
+    Math.abs(view.zoom - requested) < 0.0001
+      ? `Original pixels · ${image.naturalWidth} × ${image.naturalHeight}`
+      : "Zoom limit reached. Resize this reference to view its original pixels.",
+  );
 }
 async function readImage(
   file: File,
@@ -772,6 +823,9 @@ function showContextMenu(point: { x: number; y: number }, keyboard = false) {
     (selected.size
       ? `<div class="context-selection">${entry("Duplicate", "copy", "duplicate", "Ctrl D")}${entry("Delete", "trash", "delete", "Del", locked)}${entry("Arrange", "grid", "arrange")}${entry(locked ? "Unlock selection" : "Lock selection", "lock", "lock")}${entry("Rotate left", "rotate", "rotate-left", "", locked)}${entry("Rotate right", "rotate", "rotate-right", "", locked)}${entry("Bring to front", "front", "front", "", locked)}${entry("Send to back", "back", "back", "", locked)}</div>${divider}`
       : "") +
+    (targets.length === 1 && targets[0].kind === "image"
+      ? entry("Original pixels", "image", "original-pixels") + divider
+      : "") +
     entry("Import images", "image", "import", "I") +
     entry("Add note", "note", "note", "N") +
     divider +
@@ -902,6 +956,9 @@ async function action(name: string) {
         break;
       case "fit":
         fit();
+        break;
+      case "original-pixels":
+        await originalPixels();
         break;
       case "zoom-in":
       case "zoom-out":
@@ -1073,6 +1130,10 @@ canvas.addEventListener("dblclick", (e) => {
     ?.closest<HTMLElement>(".board-item");
   const item = history.board.items.find((i) => i.id === node?.dataset.id);
   if (item?.kind === "note" && !item.locked) editNote(item);
+  else if (item?.kind === "image")
+    void originalPixels(item).catch((error) =>
+      toast(`Could not show image: ${String(error)}`),
+    );
 });
 $("#note-toolbar").addEventListener("click", (e) => {
   const target = e.target as HTMLElement;

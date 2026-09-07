@@ -17,7 +17,8 @@ The test layers are deliberately separate. Browser automation verifies the produ
 | Duplicate, delete, stacking and locking | Playwright commands, visible state, and undo |
 | Notes and text editing | Inline draft creation, double-click/type editing, commit/cancel, formatting round trips, adjacent notes, input shortcut isolation, and async import preservation |
 | Text paste | Canvas note creation, multiline and HTML-fallback handling, source limits, image precedence, real clipboard paste inside editors |
-| Image fidelity | Exact image bytes through drop/paste/save/reload; actual screenshot pixel contrast at source resolution, with a deliberately blurred negative control |
+| Image fidelity | Exact image bytes through drop/paste/resize/save/reload; screenshot pixel contrast after shrinking and ordinary wheel zoom at 100% and 150% display scaling, plus a deliberately blurred negative control |
+| Original pixels view | Double-click and context menu, physical dimensions and alignment at 100% and 150% display scaling, unchanged document and undo history |
 | Rename, portable save/open | Download and reopen the actual file; image data and title asserted |
 | Invalid files and size bounds | Model parser tests, browser rejection tests, Rust bounded I/O tests |
 | Undo/redo branching and snapshot isolation | Unit tests plus interaction regressions |

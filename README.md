@@ -15,6 +15,7 @@ An original application inspired by the reference-board workflow: put images on 
 - A borderless, plain canvas by default. Right-click for tools; press Tab to reveal the full interface.
 - Import multiple PNG, JPEG, WebP, GIF, or AVIF images; drag files onto the canvas or paste clipboard images.
 - Pan with Space + drag or the middle mouse button; zoom around the cursor with the wheel.
+- Images retain their original pixels when resized. Zoom in to see the detail; double-click an image for a one-to-one pixel view.
 - Select, Shift-select, marquee-select, move, proportionally resize, rotate, arrange, duplicate, and reorder references.
 - Lock references to prevent accidental edits; write colorful sticky notes directly on the canvas, with text size, alignment, and bold controls.
 - Paste text to create a note. Press Tab while editing to add another with the same formatting.
@@ -75,7 +76,8 @@ npm run test:desktop
 | --- | --- |
 | Import images / add note | `I` / `N` |
 | Pan | `Space` + drag, or middle drag |
-| Zoom / actual size / fit all | Mouse wheel / `1` / `F` |
+| Zoom / canvas zoom 100% / fit all | Mouse wheel / `1` / `F` |
+| View original image pixels | Double-click an image |
 | Select all / duplicate | `Ctrl` or `⌘` + `A` / `D` |
 | Undo / redo | `Ctrl` or `⌘` + `Z` / `Shift Z` |
 | Open / save / new board | `Ctrl` or `⌘` + `O` / `S` / `N` |
