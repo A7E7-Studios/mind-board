@@ -4,6 +4,8 @@ A quiet place for your references. MindBoard is a minimal, local-first desktop r
 
 An original application inspired by the reference-board workflow: put images on an infinite canvas, arrange them, and keep your ideas in view. No account, server, telemetry, or network connection is required at runtime.
 
+**[Download MindBoard for Windows](https://github.com/A7E7-Studios/mind-board/releases/latest)** — installer and portable ZIP, with checksums.
+
 ![MindBoard reference canvas](docs/screenshots/populated-board.png)
 
 [Right-click tools](docs/screenshots/context-menu.png) · [Optional full controls](docs/screenshots/full-controls-board.png)
@@ -14,12 +16,15 @@ An original application inspired by the reference-board workflow: put images on 
 - Import multiple PNG, JPEG, WebP, GIF, or AVIF images; drag files onto the canvas or paste clipboard images.
 - Pan with Space + drag or the middle mouse button; zoom around the cursor with the wheel.
 - Select, Shift-select, marquee-select, move, proportionally resize, rotate, arrange, duplicate, and reorder references.
-- Lock references to prevent accidental edits; add and edit text notes.
+- Lock references to prevent accidental edits; write colorful sticky notes directly on the canvas, with text size, alignment, and bold controls.
+- Paste text to create a note. Press Tab while editing to add another with the same formatting.
 - Undo and redo document edits, including whole pointer gestures.
 - Save portable `.mindboard` files with embedded images; reopen them without their original source files.
 - Automatic local recovery in IndexedDB after each document edit.
 - Optional full controls, fullscreen, and desktop always-on-top mode. Alt-drag moves the desktop window; window controls also live in the right-click menu.
 - Keyboard shortcuts, accessible controls, and a compact, responsive interface.
+
+![Editing a sticky note on the canvas](docs/screenshots/note-editing.png)
 
 ## Run locally
 
@@ -95,4 +100,4 @@ This first release focuses on image arrangement and notes. It does not yet inclu
 
 ## License
 
-[MIT](LICENSE) © 2026 A7E7 Studios. Image rights remain with their respective owners. MindBoard is independent of PureRef and does not contain PureRef code or assets. Dependency licenses are listed in [third-party notices](THIRD_PARTY_NOTICES.txt); regenerate them with `node scripts/third-party-notices.mjs` after dependency changes.
+[MIT](LICENSE) © 2026 A7E7 Studios. Image rights remain with their respective owners. Dependency licenses are listed in [third-party notices](THIRD_PARTY_NOTICES.txt); regenerate them with `node scripts/third-party-notices.mjs` after dependency changes.

@@ -104,6 +104,12 @@ async function rightClickCanvas() {
     { type: 'pointerDown', button: 2 }, { type: 'pointerUp', button: 2 },
   ] }] });
 }
+async function writeNote(text) {
+  await waitFor('return !!document.querySelector(".note-editor")', 'inline note editor opened');
+  await execute('const field = document.querySelector(".note-editor"); field.value = arguments[0]; field.dispatchEvent(new Event("input", { bubbles: true }));', [text]);
+  await click('Done editing note');
+  await waitFor('return !document.querySelector(".note-editor")', 'inline note committed');
+}
 async function check(name, test) { await test(); checks++; console.log(`PASS ${name}`); }
 
 try {
@@ -151,8 +157,7 @@ try {
   });
   await check('adds a note and undoes/redoes it through the native WebView', async () => {
     await click('Add note');
-    await execute('const field = document.querySelector("#note-dialog textarea"); field.value = "Native desktop reference"; field.dispatchEvent(new Event("input", { bubbles: true }));');
-    await execute('document.querySelector("#note-submit").click()');
+    await writeNote('Native desktop reference');
     await waitFor('return document.querySelectorAll(".board-item").length === 1', 'note created');
     assert.match(await execute('return document.querySelector(".board-item").textContent'), /Native desktop reference/);
     await click('Undo');
@@ -230,7 +235,7 @@ try {
         return request;
       };`);
     await click('Add note');
-    await execute('document.querySelector("#note-text").value = "Unsaved native close protection"; document.querySelector("#note-submit").click()');
+    await writeNote('Unsaved native close protection');
     await waitFor('return document.querySelector("#save-status").textContent.includes("Recovery unavailable")', 'failed recovery reported');
     await request('POST', `/session/${session}/execute/async`, {
       script: `const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke('plugin:window|close', { label: 'main' }).then(() => done(true), error => done(String(error)));`, args: [],
@@ -242,7 +247,7 @@ try {
     assert.equal((await request('GET', `/session/${session}/window/handles`)).length, 1);
     await execute('indexedDB.open = window.__originalIndexedDBOpen; delete window.__originalIndexedDBOpen');
     await click('Add note');
-    await execute('document.querySelector("#note-text").value = "Recovery restored before close"; document.querySelector("#note-submit").click()');
+    await writeNote('Recovery restored before close');
     await waitFor('return document.querySelector("#save-status").textContent === "Saved on this device"', 'latest changes recovered');
   });
   await check('context menu closes its own native application window', async () => {

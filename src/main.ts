@@ -44,7 +44,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <button data-action="fullscreen" aria-label="Fullscreen">Fullscreen <kbd>F11</kbd></button>
       ${isDesktop ? '<button data-action="pin" aria-pressed="false">Always on top</button>' : ""}
       <div class="menu-divider"></div><button data-action="help" aria-label="Keyboard shortcuts">Keyboard shortcuts <kbd>?</kbd></button>
-      <p>MindBoard 0.1.0 · MIT licensed</p>
+      <p>MindBoard 0.2.0 · MIT licensed</p>
     </div>
     <section id="canvas" data-testid="canvas" aria-label="Reference board canvas" tabindex="0">
       <div id="world" role="listbox" aria-label="References" aria-multiselectable="true"></div>
@@ -73,7 +73,18 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <div id="context-menu" class="menu context-menu" role="menu" aria-label="Board tools" hidden></div>
     <div id="toast" role="status" hidden></div>
     <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" multiple hidden />
-    <dialog id="note-dialog"><form method="dialog" id="note-form"><div class="dialog-heading"><h2 id="note-title">Add a note</h2><button value="cancel" aria-label="Close note" formnovalidate>${icon("close")}</button></div><p>A thought, a direction, a little context.</p><textarea aria-label="Note text" id="note-text" placeholder="What’s on your mind?" maxlength="10000" required rows="6"></textarea><div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="note-submit" value="save">Add note</button></div></form></dialog>
+    <div id="note-toolbar" role="toolbar" aria-label="Note formatting" hidden>
+      <div class="note-toolbar-row">
+        <div class="note-colors" role="group" aria-label="Note color">${["yellow", "sage", "blue", "rose", "lavender", "sand"].map((color) => `<button type="button" class="note-swatch" data-note-color="${color}" aria-label="${color[0].toUpperCase() + color.slice(1)} note" title="${color[0].toUpperCase() + color.slice(1)}" aria-pressed="false"></button>`).join("")}</div>
+        <span class="tool-divider"></span>
+        <button type="button" data-note-bold aria-label="Bold note text" title="Bold" aria-pressed="false"><strong>B</strong></button>
+        <select aria-label="Note text size" id="note-size"><option value="small">Small</option><option value="medium">Medium</option><option value="large">Large</option></select>
+        <select aria-label="Note alignment" id="note-align"><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option></select>
+        <button type="button" id="note-next" aria-label="Add another note" title="Add another note · Tab">${icon("plus")}</button>
+        <button type="button" id="note-done" aria-label="Done editing note">Done</button>
+      </div>
+      <span id="note-edit-hint">Ctrl Enter to finish <span>·</span> Tab for another <span>·</span> Esc to cancel</span>
+    </div>
     <dialog id="help-dialog"><div class="dialog-heading"><div><p class="eyebrow">MAKE YOURSELF AT HOME</p><h2>Less clicking. More creating.</h2></div><button data-action="close-help" aria-label="Close shortcuts">${icon("close")}</button></div><div class="shortcut-grid">${[
       ["Import images", "I"],
       ["Add a note", "N"],
@@ -128,7 +139,7 @@ let importPoint: { x: number; y: number } | null = null;
 let notePoint: { x: number; y: number } | null = null;
 let pinned = false;
 let fullscreen = false;
-let noteId: string | null = null;
+let noteEdit: { item: Item; isNew: boolean; minHeight: number } | null = null;
 let toastTimer: ReturnType<typeof setTimeout>;
 let persistQueue = Promise.resolve();
 let revision = 0;
@@ -137,10 +148,23 @@ let exportedRevision = -1;
 let importQueue = Promise.resolve();
 let documentGeneration = 0;
 let ready = false;
-const getBoard = () => preview ?? history.board;
+const getBoard = () => {
+  const board = preview ?? history.board;
+  if (!noteEdit) return board;
+  return {
+    ...board,
+    items: noteEdit.isNew
+      ? [...board.items, noteEdit.item]
+      : board.items.map((item) =>
+          item.id === noteEdit!.item.id ? noteEdit!.item : item,
+        ),
+  };
+};
 const isEditing = (target: EventTarget | null) =>
   target instanceof HTMLElement &&
-  !!target.closest('input,textarea,[contenteditable="true"],dialog');
+  !!target.closest(
+    'input,textarea,select,[contenteditable="true"],dialog,#note-toolbar',
+  );
 function toast(message: string) {
   $("#toast").textContent = message;
   $("#toast").hidden = false;
@@ -184,7 +208,10 @@ function commit(board: Board) {
   preview = null;
   history.commit(board);
   selected = new Set(
-    [...selected].filter((id) => board.items.some((item) => item.id === id)),
+    [...selected].filter(
+      (id) =>
+        noteEdit?.item.id === id || board.items.some((item) => item.id === id),
+    ),
   );
   render();
   persist();
@@ -210,6 +237,7 @@ function renderView() {
   canvas.style.setProperty("--grid-y", `${view.y}px`);
   world.style.setProperty("--inverse-zoom", `${1 / view.zoom}`);
   $("#zoom-label").textContent = `${Math.round(view.zoom * 100)}%`;
+  renderNoteToolbar();
 }
 function render() {
   const board = getBoard();
@@ -243,7 +271,7 @@ function render() {
       }
       node.append(content);
     }
-    node.className = `board-item ${item.kind}${selected.has(item.id) ? " selected" : ""}${item.locked ? " locked" : ""}`;
+    node.className = `board-item ${item.kind}${selected.has(item.id) ? " selected" : ""}${item.locked ? " locked" : ""}${noteEdit?.item.id === item.id ? " editing-note" : ""}`;
     node.setAttribute("aria-label", item.name);
     node.setAttribute("aria-selected", String(selected.has(item.id)));
     node.setAttribute("role", "option");
@@ -259,11 +287,81 @@ function render() {
       height: `${item.height}px`,
       transform: `rotate(${item.rotation}deg)`,
     });
-    if (item.kind === "note")
+    if (item.kind === "note") {
       node.querySelector(".item-content")!.textContent = item.text ?? "";
+      node.dataset.noteColor = item.noteColor ?? "yellow";
+      node.style.setProperty("--note-font-size", `${noteFontSize(item)}px`);
+      node.style.setProperty("--note-align", item.noteAlign ?? "center");
+      node.style.setProperty("--note-weight", item.noteBold ? "650" : "400");
+      let editor = node.querySelector<HTMLTextAreaElement>(".note-editor");
+      if (noteEdit?.item.id === item.id) {
+        if (!editor) {
+          editor = document.createElement("textarea");
+          editor.className = "note-editor";
+          editor.setAttribute("aria-label", "Note text");
+          editor.placeholder = "Write a thought…";
+          editor.maxLength = 100_000;
+          editor.spellcheck = true;
+          editor.addEventListener("input", () => {
+            if (!noteEdit) return;
+            noteEdit.item = {
+              ...noteEdit.item,
+              text: editor!.value,
+              name: editor!.value.slice(0, 80) || "Note",
+            };
+            noteEdit.item.height = Math.max(
+              noteEdit.minHeight,
+              noteHeight(noteEdit.item),
+            );
+            render();
+          });
+          editor.addEventListener("keydown", (e) => {
+            if (e.isComposing) return;
+            if (e.key === "Escape") {
+              e.preventDefault();
+              e.stopPropagation();
+              finishNote(true);
+            } else if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+              e.preventDefault();
+              finishNote();
+            } else if (e.key === "Tab" && !e.shiftKey) {
+              e.preventDefault();
+              addAnotherNote();
+            } else if (
+              (e.ctrlKey || e.metaKey) &&
+              e.key.toLowerCase() === "s"
+            ) {
+              e.preventDefault();
+              void action("save");
+            }
+          });
+          editor.addEventListener("blur", (event) => {
+            if (
+              event.relatedTarget instanceof HTMLElement &&
+              event.relatedTarget.closest(".note-editor,#note-toolbar")
+            )
+              return;
+            setTimeout(() => {
+              if (
+                noteEdit?.item.id === item.id &&
+                !document.activeElement?.closest(".note-editor,#note-toolbar")
+              )
+                finishNote(false, false);
+            }, 0);
+          });
+          node.append(editor);
+        }
+        if (editor.value !== (item.text ?? "")) editor.value = item.text ?? "";
+        editor.style.paddingTop = `${Math.max(24, (item.height - noteTextHeight(item)) / 2)}px`;
+      } else editor?.remove();
+    }
     node.querySelector(".resize-handle")?.remove();
     node.querySelector(".lock-badge")?.remove();
-    if (selected.has(item.id) && !item.locked) {
+    if (
+      selected.has(item.id) &&
+      !item.locked &&
+      noteEdit?.item.id !== item.id
+    ) {
       const handle = document.createElement("div");
       handle.className = "resize-handle";
       handle.dataset.testid = "resize-handle";
@@ -374,7 +472,9 @@ function importImages(files: File[], at = center()) {
       }
       if (newItems.length) {
         finishGesture(false);
-        selected = new Set(newItems.map((i) => i.id));
+        selected = noteEdit
+          ? new Set([noteEdit.item.id])
+          : new Set(newItems.map((i) => i.id));
         try {
           if (changeItems((items) => [...items, ...newItems]))
             toast(
@@ -383,11 +483,11 @@ function importImages(files: File[], at = center()) {
                 : `Added ${newItems.length} reference${newItems.length === 1 ? "" : "s"}`,
             );
           else {
-            selected.clear();
+            selected = noteEdit ? new Set([noteEdit.item.id]) : new Set();
             render();
           }
         } catch (error) {
-          selected.clear();
+          selected = noteEdit ? new Set([noteEdit.item.id]) : new Set();
           render();
           toast(`Could not import images: ${(error as Error).message}`);
         }
@@ -397,33 +497,177 @@ function importImages(files: File[], at = center()) {
     });
   return importQueue;
 }
-function editNote(item?: Item) {
-  noteId = item?.id ?? null;
-  $("#note-title").textContent = item ? "Edit note" : "Add a note";
-  $("#note-submit").textContent = item ? "Update note" : "Add note";
-  $<HTMLTextAreaElement>("#note-text").value = item?.text ?? "";
-  $<HTMLDialogElement>("#note-dialog").showModal();
-  $<HTMLTextAreaElement>("#note-text").focus();
+function noteFontSize(item: Item) {
+  return (
+    ({ small: 18, medium: 24, large: 32 }[item.noteSize ?? "medium"] *
+      item.width) /
+    280
+  );
 }
-function noteHeight(text: string, width: number): number {
+function noteTextHeight(item: Item): number {
   const measure = document.createElement("div");
   Object.assign(measure.style, {
     position: "fixed",
     visibility: "hidden",
-    width: `${width}px`,
-    padding: "21px 23px",
-    font: '21px / 1.45 Georgia, "Times New Roman", serif',
+    width: `${item.width}px`,
+    padding: "24px",
+    fontFamily: 'Inter, "Segoe UI", sans-serif',
+    fontSize: `${noteFontSize(item)}px`,
+    fontWeight: item.noteBold ? "650" : "400",
+    lineHeight: "1.4",
     whiteSpace: "pre-wrap",
     overflowWrap: "anywhere",
   });
-  measure.textContent = text;
+  measure.textContent = `${item.text ?? ""}\u200b`;
   document.body.append(measure);
-  const height = Math.max(
-    200,
-    Math.ceil(measure.getBoundingClientRect().height) + 8,
-  );
+  const height = Math.ceil(measure.getBoundingClientRect().height) - 48;
   measure.remove();
   return height;
+}
+function noteHeight(item: Item): number {
+  return Math.min(100_000, Math.max(200, noteTextHeight(item) + 56));
+}
+function editNote(item?: Item, template?: Item) {
+  if (item?.locked || !finishNote()) return;
+  finishGesture(false);
+  if (!item && history.board.items.length >= 2000) {
+    toast("A board can contain up to 2,000 references.");
+    return;
+  }
+  const p = notePoint ?? center();
+  notePoint = null;
+  const draft: Item = item
+    ? { ...item }
+    : {
+        id: crypto.randomUUID(),
+        kind: "note",
+        name: "Note",
+        text: "",
+        x: template ? template.x + template.width + 24 : p.x - 140,
+        y: template ? template.y : p.y - 140,
+        width: template?.width ?? 280,
+        height: template?.height ?? 280,
+        rotation: 0,
+        locked: false,
+        noteColor: template?.noteColor ?? "yellow",
+        noteAlign: template?.noteAlign ?? "center",
+        noteSize: template?.noteSize ?? "medium",
+        noteBold: template?.noteBold ?? false,
+      };
+  noteEdit = { item: draft, isNew: !item, minHeight: draft.height };
+  selected = new Set([draft.id]);
+  const left = draft.x * view.zoom + view.x,
+    top = draft.y * view.zoom + view.y;
+  if (
+    left < 16 ||
+    top < 80 ||
+    left + draft.width * view.zoom > canvas.clientWidth - 16 ||
+    top + draft.height * view.zoom > canvas.clientHeight - 16
+  ) {
+    // Keep editing at a readable scale and bring the new note into view.
+    view.zoom = Math.max(
+      0.1,
+      Math.min(
+        1,
+        (canvas.clientWidth - 32) / draft.width,
+        (canvas.clientHeight - 120) / draft.height,
+      ),
+    );
+    view.x = canvas.clientWidth / 2 - (draft.x + draft.width / 2) * view.zoom;
+    view.y = canvas.clientHeight / 2 - (draft.y + draft.height / 2) * view.zoom;
+  }
+  render();
+  const editor = $<HTMLTextAreaElement>(".note-editor");
+  editor.focus({ preventScroll: true });
+  editor.setSelectionRange(editor.value.length, editor.value.length);
+}
+function finishNote(cancel = false, focus = true): boolean {
+  if (!noteEdit) return true;
+  const editing = noteEdit;
+  noteEdit = null;
+  const text = editing.item.text?.trim() ?? "";
+  if (cancel || (editing.isNew && !text)) {
+    if (editing.isNew) selected.delete(editing.item.id);
+    render();
+  } else {
+    const item = { ...editing.item, text, name: text.slice(0, 80) || "Note" };
+    const board = history.board;
+    const previous = board.items.find((i) => i.id === item.id);
+    if (
+      JSON.stringify(previous) !== JSON.stringify(item) &&
+      !commit({
+        ...board,
+        items: editing.isNew
+          ? [...board.items, item]
+          : board.items.map((i) => (i.id === item.id ? item : i)),
+      })
+    ) {
+      noteEdit = editing;
+      render();
+      $(".note-editor").focus({ preventScroll: true });
+      return false;
+    }
+    render();
+  }
+  if (focus) canvas.focus({ preventScroll: true });
+  return true;
+}
+function selectedNote() {
+  if (selected.size !== 1) return undefined;
+  return getBoard().items.find(
+    (item) => selected.has(item.id) && item.kind === "note" && !item.locked,
+  );
+}
+function renderNoteToolbar() {
+  const toolbar = $("#note-toolbar");
+  const item = selectedNote();
+  toolbar.hidden = !item || !!gesture || !$("#context-menu").hidden;
+  if (toolbar.hidden || !item) return;
+  toolbar
+    .querySelectorAll<HTMLButtonElement>("[data-note-color]")
+    .forEach((button) =>
+      button.setAttribute(
+        "aria-pressed",
+        String(button.dataset.noteColor === (item.noteColor ?? "yellow")),
+      ),
+    );
+  toolbar
+    .querySelector("[data-note-bold]")!
+    .setAttribute("aria-pressed", String(!!item.noteBold));
+  $<HTMLSelectElement>("#note-align").value = item.noteAlign ?? "center";
+  $<HTMLSelectElement>("#note-size").value = item.noteSize ?? "medium";
+  $("#note-done").hidden = !noteEdit;
+  $("#note-edit-hint").hidden = !noteEdit;
+  const rect = canvas.getBoundingClientRect();
+  const box = bounds([item])!;
+  const left = rect.left + view.x + box.x * view.zoom;
+  const top = rect.top + view.y + box.y * view.zoom;
+  if (
+    left > rect.right ||
+    top > rect.bottom ||
+    left + box.width * view.zoom < rect.left ||
+    top + box.height * view.zoom < rect.top
+  ) {
+    toolbar.hidden = true;
+    return;
+  }
+  toolbar.style.left = `${Math.max(8, Math.min(innerWidth - toolbar.offsetWidth - 8, left + (box.width * view.zoom) / 2 - toolbar.offsetWidth / 2))}px`;
+  toolbar.style.top = `${Math.max(rect.top + 8, Math.min(innerHeight - toolbar.offsetHeight - 8, top - toolbar.offsetHeight - 12))}px`;
+}
+function formatNote(values: Partial<Item>) {
+  const item = selectedNote();
+  if (!item) return;
+  const next = { ...item, ...values };
+  next.height = Math.max(noteEdit?.minHeight ?? next.height, noteHeight(next));
+  if (noteEdit) {
+    noteEdit.item = next;
+    render();
+  } else
+    changeItems((items) => items.map((i) => (i.id === item.id ? next : i)));
+}
+function addAnotherNote() {
+  const item = selectedNote();
+  if (item && finishNote()) editNote(undefined, item);
 }
 function manipulate(action: string) {
   const board = history.board;
@@ -489,6 +733,7 @@ function hideContextMenu(restoreFocus = false) {
   $("#context-menu").hidden = true;
   contextPoint = null;
   if (restoreFocus) canvas.focus({ preventScroll: true });
+  renderNoteToolbar();
 }
 function cancelWindowMove() {
   windowMoveArmed = false;
@@ -561,10 +806,12 @@ function showContextMenu(point: { x: number; y: number }, keyboard = false) {
   menu
     .querySelector<HTMLButtonElement>("button:not(:disabled)")
     ?.focus({ preventScroll: true });
+  renderNoteToolbar();
 }
 
 async function action(name: string) {
   if (!ready) return;
+  if (!finishNote(false, false)) return;
   finishGesture(false);
   const at = contextPoint;
   if (!$("#context-menu").hidden) hideContextMenu(true);
@@ -755,6 +1002,16 @@ document.addEventListener("click", (e) => {
 document.addEventListener(
   "pointerdown",
   (e) => {
+    const target = e.target as HTMLElement;
+    if (
+      noteEdit &&
+      !target.closest(".note-editor,#note-toolbar") &&
+      !finishNote(false, false)
+    ) {
+      e.preventDefault();
+      e.stopPropagation();
+      return;
+    }
     if (!(e.target as HTMLElement).closest("#context-menu")) hideContextMenu();
   },
   { capture: true },
@@ -809,65 +1066,40 @@ $<HTMLInputElement>("#image-input").addEventListener("change", (e) => {
   importPoint = null;
   input.value = "";
 });
-$("#note-form").addEventListener("submit", (e) => {
-  if ((e as SubmitEvent).submitter?.getAttribute("value") !== "save") return;
-  const text = $<HTMLTextAreaElement>("#note-text").value.trim();
-  if (!text) {
-    e.preventDefault();
-    return;
-  }
-  if (noteId) {
-    if (
-      !changeItems((items) =>
-        items.map((i) =>
-          i.id === noteId
-            ? {
-                ...i,
-                text,
-                name: text.slice(0, 80),
-                height: Math.max(i.height, noteHeight(text, i.width)),
-              }
-            : i,
-        ),
-      )
-    )
-      e.preventDefault();
-  } else {
-    if (history.board.items.length >= 2000) {
-      e.preventDefault();
-      toast("A board can contain up to 2,000 references.");
-      return;
-    }
-    const p = notePoint ?? center();
-    const id = crypto.randomUUID();
-    selected = new Set([id]);
-    const height = noteHeight(text, 280);
-    if (
-      !changeItems((items) => [
-        ...items,
-        {
-          id,
-          kind: "note",
-          name: text.slice(0, 80),
-          text,
-          x: p.x - 140,
-          y: p.y - height / 2,
-          width: 280,
-          height,
-          rotation: 0,
-          locked: false,
-        },
-      ])
-    )
-      e.preventDefault();
-  }
-});
 canvas.addEventListener("dblclick", (e) => {
+  if ((e.target as HTMLElement).closest(".note-editor")) return;
   const node = document
     .elementFromPoint(e.clientX, e.clientY)
     ?.closest<HTMLElement>(".board-item");
   const item = history.board.items.find((i) => i.id === node?.dataset.id);
   if (item?.kind === "note" && !item.locked) editNote(item);
+});
+$("#note-toolbar").addEventListener("click", (e) => {
+  const target = e.target as HTMLElement;
+  const swatch = target.closest<HTMLElement>("[data-note-color]");
+  if (swatch)
+    formatNote({ noteColor: swatch.dataset.noteColor as Item["noteColor"] });
+  else if (target.closest("[data-note-bold]"))
+    formatNote({ noteBold: !selectedNote()?.noteBold });
+  else if (target.closest("#note-done")) finishNote();
+  else if (target.closest("#note-next")) addAnotherNote();
+});
+$("#note-size").addEventListener("change", (e) =>
+  formatNote({
+    noteSize: (e.target as HTMLSelectElement).value as Item["noteSize"],
+  }),
+);
+$("#note-align").addEventListener("change", (e) =>
+  formatNote({
+    noteAlign: (e.target as HTMLSelectElement).value as Item["noteAlign"],
+  }),
+);
+$("#note-toolbar").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && noteEdit) {
+    e.preventDefault();
+    e.stopPropagation();
+    finishNote(true);
+  }
 });
 
 type Gesture = {
@@ -882,6 +1114,7 @@ type Gesture = {
 };
 let gesture: Gesture | null = null;
 canvas.addEventListener("pointerdown", (e) => {
+  if ((e.target as HTMLElement).closest(".note-editor")) return;
   if (ready && isDesktop && e.button === 0 && (e.altKey || windowMoveArmed)) {
     e.preventDefault();
     windowMoveArmed = false;
@@ -1038,6 +1271,7 @@ canvas.addEventListener("pointerup", () => finishGesture(false));
 canvas.addEventListener("pointercancel", () => finishGesture(true));
 canvas.addEventListener("lostpointercapture", () => finishGesture(true));
 canvas.addEventListener("contextmenu", (e) => {
+  if ((e.target as HTMLElement).closest(".note-editor")) return;
   e.preventDefault();
   showContextMenu({ x: e.clientX, y: e.clientY });
 });
@@ -1055,6 +1289,7 @@ $(".topbar").addEventListener("pointerdown", (e) => {
 canvas.addEventListener(
   "wheel",
   (e) => {
+    if ((e.target as HTMLElement).closest(".note-editor")) return;
     e.preventDefault();
     if (gesture) return;
     view = zoomAt(
@@ -1099,6 +1334,22 @@ document.addEventListener("paste", (e) => {
   if (files.length) {
     e.preventDefault();
     void importImages(files);
+    return;
+  }
+  const text = e.clipboardData?.getData("text/plain") ?? "";
+  if (text.trim()) {
+    e.preventDefault();
+    if (text.length > 100_000) {
+      toast("A note can contain up to 100,000 characters.");
+      return;
+    }
+    editNote();
+    if (noteEdit) {
+      const editor = $<HTMLTextAreaElement>(".note-editor");
+      editor.value = text;
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+      finishNote();
+    }
   }
 });
 document.addEventListener("keydown", (e) => {
@@ -1114,6 +1365,25 @@ document.addEventListener("keydown", (e) => {
   }
   const command = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
+  if (
+    (e.target === canvas || e.target === document.body) &&
+    !command &&
+    !e.altKey &&
+    (e.key === "Enter" ||
+      (e.key.length === 1 && !e.repeat && !" inf1?".includes(key)))
+  ) {
+    const note = selectedNote();
+    if (note) {
+      e.preventDefault();
+      editNote(note);
+      if (e.key !== "Enter") {
+        const editor = $<HTMLTextAreaElement>(".note-editor");
+        editor.value += e.key;
+        editor.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      return;
+    }
+  }
   let requested: string | undefined;
   if (command) {
     if (key === "a") {
@@ -1181,6 +1451,7 @@ document.addEventListener("keyup", (e) => {
   }
 });
 window.addEventListener("blur", () => {
+  finishNote(false, false);
   spaceDown = false;
   canvas.classList.remove("space-pan");
   finishGesture(true);

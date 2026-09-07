@@ -84,12 +84,10 @@ test("imports images and adds notes through the contextual tools", async ({
   await openContextMenu(page);
   await command(page, "Add note").click();
   await page
-    .locator("#note-dialog")
     .getByRole("textbox", { name: "Note text" })
     .fill("Keep the canvas quiet.");
   await page
-    .locator("#note-dialog")
-    .getByRole("button", { name: "Add note", exact: true })
+    .getByRole("button", { name: "Done editing note", exact: true })
     .click();
   await expect(page.getByTestId("board-item")).toHaveCount(2);
   await expect(page.locator(".topbar")).not.toBeVisible();
@@ -169,7 +167,7 @@ test("Shift+F10 opens contextual tools and arrows navigate available actions", a
   await expect(command(page, "Import images")).toBeFocused();
   await page.keyboard.press("ArrowDown");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#note-dialog")).toBeVisible();
+  await expect(page.locator(".note-editor")).toBeFocused();
   await expect(contextMenu(page)).not.toBeVisible();
 });
 
@@ -198,7 +196,7 @@ test("Space activates a focused contextual tool without starting canvas panning"
   await page.keyboard.down("Space");
   await expect(canvas).not.toHaveClass(/space-pan|panning/);
   await page.keyboard.up("Space");
-  await expect(page.locator("#note-dialog")).toBeVisible();
+  await expect(page.locator(".note-editor")).toBeFocused();
   await expect(contextMenu(page)).not.toBeVisible();
   await page.keyboard.press("Escape");
   await expect(canvas).not.toHaveClass(/space-pan|panning/);

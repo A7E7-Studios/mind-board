@@ -15,7 +15,9 @@ The test layers are deliberately separate. Browser automation verifies the produ
 | Move and proportional resize | Playwright geometry assertions, one-step undo, gesture cancellation |
 | Rotation and arrangement | Rotation-aware model tests and visible geometry E2E |
 | Duplicate, delete, stacking and locking | Playwright commands, visible state, and undo |
-| Notes and text editing | Playwright creation, double-click editing, input shortcut isolation |
+| Notes and text editing | Inline draft creation, double-click/type editing, commit/cancel, formatting round trips, adjacent notes, input shortcut isolation, and async import preservation |
+| Text paste | Canvas note creation, multiline and HTML-fallback handling, source limits, image precedence, real clipboard paste inside editors |
+| Image fidelity | Exact image bytes through drop/paste/save/reload; actual screenshot pixel contrast at source resolution, with a deliberately blurred negative control |
 | Rename, portable save/open | Download and reopen the actual file; image data and title asserted |
 | Invalid files and size bounds | Model parser tests, browser rejection tests, Rust bounded I/O tests |
 | Undo/redo branching and snapshot isolation | Unit tests plus interaction regressions |

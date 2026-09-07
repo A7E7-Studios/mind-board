@@ -1,12 +1,12 @@
 # Verification record
 
-Local validation on 7 September 2026, Windows x64.
+Local validation of MindBoard 0.2.0 on 7 September 2026, Windows x64.
 
 | Check | Result |
 | --- | --- |
 | TypeScript and Vite production build | Passed |
-| Board model and persistence tests | 61 passed (52 model, 9 IndexedDB) |
-| Playwright end-to-end tests, Microsoft Edge | 51 passed, including 11 minimal/context-menu scenarios |
+| Board model and persistence tests | 77 passed (68 model, 9 IndexedDB) |
+| Playwright end-to-end tests, Microsoft Edge | 72 passed, including 18 note/paste scenarios and 3 image-quality checks |
 | Rust IPC/filesystem tests | 7 passed |
 | Packaged Windows app through WebDriver | 11 passed, including borderless startup, native window controls, failed-recovery close protection, and IPC permissions |
 | Rust formatting | Passed |
@@ -14,8 +14,8 @@ Local validation on 7 September 2026, Windows x64.
 | Source formatting | Passed |
 | Visual QA | Default minimal and optional full controls at 1280×820; responsive checks at 320/640 pixels |
 
-Browser tests include real PNG/JPEG/WebP/GIF/AVIF decoding, exact-limit 20 MiB image recovery, combined-board 100 MiB rejection, interrupted pointer gestures, saved-file variants with reused IDs, long-note sizing, storage unavailability, file round trips, and all exposed browser controls. Synthetic clipboard and drop events exercise browser handlers with actual image bytes.
+Browser tests include real PNG/JPEG/WebP/GIF/AVIF decoding, exact-limit 20 MiB image recovery, combined-board 100 MiB rejection, interrupted pointer gestures, saved-file variants with reused IDs, inline note editing and formatting, long-note sizing, storage unavailability, file round trips, and all exposed browser controls. Real text clipboard paste is tested on the canvas and inside editors. Synthetic image clipboard and drop events preserve exact source bytes through save/reload; screenshot pixel contrast verifies sharp detail after zoom, with deliberately downsampled pixels as a negative control. Headless Edge did not reproduce the old compositing hint's blur, so that specific cause remains an inference rather than a reproduced failure.
 
-Production frontend: approximately 50 KB JavaScript and 14 KB CSS before compression, around 20 KB combined after gzip. These sizes exclude imported user images. The final Windows x64 executable is 3,202,560 bytes (3.05 MiB). An NSIS installer and a portable ZIP with license notices were built. Native OS verification and exact coverage limits are recorded in [desktop verification](../src-tauri/tests/README.md).
+Production frontend: approximately 56 KB JavaScript and 16 KB CSS before compression, around 23 KB combined after gzip. These sizes exclude imported user images. The Windows x64 executable is 3,204,608 bytes (3.06 MiB). An NSIS installer and a portable ZIP with license notices were built and their contents verified. Native OS verification and exact coverage limits are recorded in [desktop verification](../src-tauri/tests/README.md).
 
-Clean Windows GitHub Actions validation also passed on 7 September 2026 for commit `d98903a`: [successful run](https://github.com/A7E7-Studios/mind-board/actions/runs/34108858047). This includes the production build, all 130 automated checks, formatting, Clippy, and the actual desktop executable. Native launch diagnostics confirm that the temporary app-specific CI debugging policy was restored. macOS/Linux desktop behavior remains unverified.
+The previous 0.1.0 build passed [clean Windows validation](https://github.com/A7E7-Studios/mind-board/actions/runs/34108858047), including native launch and restoration of the temporary app-specific CI debugging policy. Clean CI validation for 0.2.0 is required before publication. macOS/Linux desktop behavior remains unverified.

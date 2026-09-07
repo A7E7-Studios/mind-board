@@ -189,25 +189,21 @@ test("creates and edits notes without treating text input as canvas shortcuts", 
   page,
 }) => {
   await page.getByRole("button", { name: "Add note", exact: true }).click();
-  const dialog = page.locator("#note-dialog");
-  await expect(dialog).toBeVisible();
-  await dialog
-    .getByRole("textbox", { name: "Note text" })
-    .fill("Look for warm light and simple shapes.");
-  await dialog.getByRole("button", { name: "Add note", exact: true }).click();
+  const editor = page.getByRole("textbox", { name: "Note text" });
+  await expect(editor).toBeFocused();
+  await editor.fill("Look for warm light and simple shapes.");
+  await page
+    .getByRole("button", { name: "Done editing note", exact: true })
+    .click();
   await expect(page.getByTestId("board-item")).toHaveCount(1);
   await expect(page.getByTestId("board-item")).toContainText(
     "Look for warm light",
   );
   await page.getByTestId("board-item").dblclick();
-  await dialog
-    .getByRole("textbox", { name: "Note text" })
-    .fill("Updated reference notes");
+  await editor.fill("Updated reference notes");
   await page.keyboard.press("Control+a");
   await page.keyboard.insertText("Final notes");
-  await dialog
-    .getByRole("button", { name: "Update note", exact: true })
-    .click();
+  await page.keyboard.press("Control+Enter");
   await expect(page.getByTestId("board-item")).toContainText("Final notes");
   await page.keyboard.press("Control+z");
   await expect(page.getByTestId("board-item")).toContainText(
@@ -843,14 +839,12 @@ for (const width of [320, 640]) {
       ).toBeInViewport({ ratio: 1 });
     }
     await page.getByRole("button", { name: "Add note", exact: true }).click();
-    await expect(page.locator("#note-dialog")).toBeInViewport({ ratio: 1 });
+    await expect(page.locator(".note-editor")).toBeInViewport({ ratio: 1 });
     await page
-      .locator("#note-dialog")
       .getByRole("textbox", { name: "Note text" })
       .fill("Small window, same board.");
     await page
-      .locator("#note-dialog")
-      .getByRole("button", { name: "Add note", exact: true })
+      .getByRole("button", { name: "Done editing note", exact: true })
       .click();
     await expect(page.getByTestId("board-item")).toHaveCount(2);
     await page.getByRole("button", { name: "Delete", exact: true }).click();
@@ -873,9 +867,9 @@ test("Tab navigates toolbar controls when a control has keyboard focus", async (
     page.getByRole("button", { name: "Import images", exact: true }),
   ).toBeVisible();
   await page.keyboard.press("Enter");
-  await expect(page.locator("#note-dialog")).toBeVisible();
+  await expect(page.locator(".note-editor")).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(page.locator("#note-dialog")).not.toBeVisible();
+  await expect(page.locator(".note-editor")).not.toBeVisible();
 });
 
 test("new and edited notes grow to keep their text readable", async ({
@@ -884,13 +878,9 @@ test("new and edited notes grow to keep their text readable", async ({
   const initial =
     "Design direction\n\nQuiet colors.\nNatural light.\nSimple shapes.\nSoft shadows.\nKeep room to breathe.";
   await page.getByRole("button", { name: "Add note", exact: true }).click();
+  await page.getByRole("textbox", { name: "Note text" }).fill(initial);
   await page
-    .locator("#note-dialog")
-    .getByRole("textbox", { name: "Note text" })
-    .fill(initial);
-  await page
-    .locator("#note-dialog")
-    .getByRole("button", { name: "Add note", exact: true })
+    .getByRole("button", { name: "Done editing note", exact: true })
     .click();
   const note = page.getByTestId("board-item");
   const originalHeight = (await bounds(note)).height;
@@ -902,14 +892,12 @@ test("new and edited notes grow to keep their text readable", async ({
   expect(await fitsText()).toBe(true);
   await note.dblclick();
   await page
-    .locator("#note-dialog")
     .getByRole("textbox", { name: "Note text" })
     .fill(
       `${initial}\n\nExplore warm and cool variations.\nFind three references for each.`,
     );
   await page
-    .locator("#note-dialog")
-    .getByRole("button", { name: "Update note", exact: true })
+    .getByRole("button", { name: "Done editing note", exact: true })
     .click();
   expect((await bounds(note)).height).toBeGreaterThan(originalHeight);
   expect(await fitsText()).toBe(true);

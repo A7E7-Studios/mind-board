@@ -38,6 +38,111 @@ const rasterPayload = (bytes: number): string => {
   return `data:image/png;base64,${"A".repeat(Math.ceil(bytes / 3) * 4 - padding)}${"=".repeat(padding)}`;
 };
 
+describe("note formatting compatibility", () => {
+  const note = (extra: Partial<Item> = {}): Item => {
+    const { src: _src, ...item } = image({
+      kind: "note",
+      text: "A thought",
+      ...extra,
+    });
+    return item;
+  };
+
+  it("round trips each supported style and preserves explicit false", () => {
+    for (const noteColor of [
+      "yellow",
+      "sage",
+      "blue",
+      "rose",
+      "lavender",
+      "sand",
+    ] as const) {
+      for (const noteAlign of ["left", "center", "right"] as const) {
+        for (const noteSize of ["small", "medium", "large"] as const) {
+          for (const noteBold of [false, true]) {
+            const original = board([
+              note({ noteColor, noteAlign, noteSize, noteBold }),
+            ]);
+            expect(parseBoard(serializeBoard(original))).toEqual(original);
+          }
+        }
+      }
+    }
+  });
+
+  it("keeps legacy v1 notes unchanged without injecting defaults", () => {
+    const legacy = board([note()]);
+    const parsed = parseBoard(serializeBoard(legacy));
+    expect(parsed).toEqual(legacy);
+    for (const key of ["noteColor", "noteAlign", "noteSize", "noteBold"]) {
+      expect(Object.hasOwn(parsed.items[0], key)).toBe(false);
+    }
+    expect(
+      parseBoard(serializeBoard(board([note({ noteBold: false })]))).items[0],
+    ).toEqual(note({ noteBold: false }));
+  });
+
+  it.each([
+    { noteColor: "red" },
+    { noteColor: null },
+    { noteColor: ["sage"] },
+    { noteAlign: "justify" },
+    { noteAlign: false },
+    { noteAlign: {} },
+    { noteSize: "extra-large" },
+    { noteSize: 20 },
+    { noteSize: null },
+    { noteBold: "true" },
+    { noteBold: 0 },
+    { noteBold: null },
+  ])("rejects invalid explicit note formatting %j", (mutation) => {
+    expect(() =>
+      parseBoard(JSON.stringify(board([{ ...note(), ...mutation } as Item]))),
+    ).toThrow("Invalid item");
+  });
+
+  it("ignores note-only fields on images even when their values are invalid", () => {
+    const contents = JSON.stringify(
+      board([
+        {
+          ...image(),
+          noteColor: "<script>",
+          noteAlign: null,
+          noteSize: 42,
+          noteBold: "true",
+        } as unknown as Item,
+      ]),
+    );
+    expect(parseBoard(contents)).toEqual(board());
+  });
+
+  it("records style-only edits independently and restores legacy style absence", () => {
+    const original = board([note()]);
+    const history = new History(original);
+    const changes: Partial<Item>[] = [
+      { noteColor: "rose" },
+      { noteAlign: "right" },
+      { noteSize: "large" },
+      { noteBold: true },
+      { noteBold: false },
+    ];
+    const snapshots = [original];
+    for (const change of changes) {
+      const next = history.board;
+      Object.assign(next.items[0], change);
+      snapshots.push(structuredClone(next));
+      history.commit(next);
+      next.items[0].noteColor = "sand";
+    }
+    for (let index = snapshots.length - 2; index >= 0; index--)
+      expect(history.undo()).toEqual(snapshots[index]);
+    expect(history.canUndo).toBe(false);
+    for (let index = 1; index < snapshots.length; index++)
+      expect(history.redo()).toEqual(snapshots[index]);
+    expect(history.canRedo).toBe(false);
+  });
+});
+
 describe("portable board format", () => {
   it.each([
     "simple ASCII",

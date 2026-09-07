@@ -1,4 +1,9 @@
 /** Portable board data and deterministic operations, independent of the UI. */
+export type NoteColor =
+  "yellow" | "sage" | "blue" | "rose" | "lavender" | "sand";
+export type NoteAlign = "left" | "center" | "right";
+export type NoteSize = "small" | "medium" | "large";
+
 export type Item = {
   id: string;
   kind: "image" | "note";
@@ -10,6 +15,10 @@ export type Item = {
   locked: boolean;
   src?: string;
   text?: string;
+  noteColor?: NoteColor;
+  noteAlign?: NoteAlign;
+  noteSize?: NoteSize;
+  noteBold?: boolean;
   name: string;
 };
 
@@ -128,6 +137,20 @@ export function parseBoard(text: string): Board {
     if (item.kind === "image" && !safeImageSource(item.src)) throw invalid();
     if (item.kind === "note" && !shortString(item.text, 100_000))
       throw invalid();
+    if (item.kind === "note") {
+      if (
+        ("noteColor" in item &&
+          !["yellow", "sage", "blue", "rose", "lavender", "sand"].includes(
+            item.noteColor as string,
+          )) ||
+        ("noteAlign" in item &&
+          !["left", "center", "right"].includes(item.noteAlign as string)) ||
+        ("noteSize" in item &&
+          !["small", "medium", "large"].includes(item.noteSize as string)) ||
+        ("noteBold" in item && typeof item.noteBold !== "boolean")
+      )
+        throw invalid();
+    }
     ids.add(item.id);
     // Explicitly reconstruct: unknown fields and object prototypes never enter app state.
     return {
@@ -142,7 +165,21 @@ export function parseBoard(text: string): Board {
       locked: item.locked,
       ...(item.kind === "image"
         ? { src: item.src as string }
-        : { text: item.text as string }),
+        : {
+            text: item.text as string,
+            ...("noteColor" in item
+              ? { noteColor: item.noteColor as NoteColor }
+              : {}),
+            ...("noteAlign" in item
+              ? { noteAlign: item.noteAlign as NoteAlign }
+              : {}),
+            ...("noteSize" in item
+              ? { noteSize: item.noteSize as NoteSize }
+              : {}),
+            ...("noteBold" in item
+              ? { noteBold: item.noteBold as boolean }
+              : {}),
+          }),
     };
   });
   return { version: 1, name: value.name, items };
@@ -178,7 +215,11 @@ function sameBoard(a: Board, b: Board): boolean {
         item.rotation === other.rotation &&
         item.locked === other.locked &&
         item.src === other.src &&
-        item.text === other.text
+        item.text === other.text &&
+        item.noteColor === other.noteColor &&
+        item.noteAlign === other.noteAlign &&
+        item.noteSize === other.noteSize &&
+        item.noteBold === other.noteBold
       );
     })
   );
