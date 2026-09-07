@@ -28,6 +28,10 @@ An original application inspired by the reference-board workflow: put images on 
 
 ![Editing a sticky note on the canvas](docs/screenshots/note-editing.png)
 
+## Updating
+
+To update an installed Windows copy, close MindBoard and run the newer installer from [GitHub Releases](https://github.com/A7E7-Studios/mind-board/releases/latest). It detects the existing installation; a separate manual uninstall is not required. Keep app data if an uninstall step is offered. For a portable copy, close the app and replace its executable with the new download. Existing `.mindboard` files remain compatible. There is no built-in update checker yet.
+
 ## Run locally
 
 Requires Node.js 22.12+ (or 24 LTS) and npm. Desktop development also requires Rust and the [Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/), including the Microsoft C++ build tools and WebView2 on Windows.
