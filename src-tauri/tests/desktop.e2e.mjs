@@ -1,8 +1,9 @@
 // Drives the real packaged WebView2 frontend and Rust backend over WebDriver.
 // No IPC mocks or test-only commands are shipped in the application.
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -15,10 +16,28 @@ for (const file of [binary, driverPath, edgePath]) {
 const port = Number(process.env.WEBDRIVER_PORT ?? 4444);
 mkdirSync('src-tauri/.tools/profiles', { recursive: true });
 const profile = mkdtempSync(resolve('src-tauri/.tools/profiles/desktop-'));
-const driver = spawn(driverPath, ['--port', String(port), '--native-port', String(port + 1), '--native-driver', edgePath], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, WEBVIEW2_USER_DATA_FOLDER: profile } });
+// Let EdgeDriver own the complete WebView2 configuration. An inherited profile
+// override can send the app to a different directory than the driver watches
+// for DevToolsActivePort, notably across different EdgeDriver versions.
+const driverEnvironment = { ...process.env };
+const runtimeFolder = driverEnvironment.WEBVIEW2_BROWSER_EXECUTABLE_FOLDER;
+delete driverEnvironment.WEBVIEW2_USER_DATA_FOLDER;
+delete driverEnvironment.WEBVIEW2_BROWSER_EXECUTABLE_FOLDER;
+const capabilities = { alwaysMatch: { 'tauri:options': {
+  application: binary,
+  webviewOptions: { userDataFolder: profile, ...(runtimeFolder ? { browserExecutableFolder: runtimeFolder } : {}) },
+} } };
+const versionOf = file => {
+  const result = spawnSync(file, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
+  return result.error?.message ?? `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
+};
+const launchDiagnostics = { binary, profile, runtimeFolder: runtimeFolder ?? 'installed evergreen runtime', versions: { edgeDriver: versionOf(edgePath) }, tauriDriver: { path: driverPath, sha256: createHash('sha256').update(readFileSync(driverPath)).digest('hex') }, requestedCapabilities: capabilities };
+mkdirSync('test-results', { recursive: true });
+const driver = spawn(driverPath, ['--port', String(port), '--native-port', String(port + 1), '--native-driver', edgePath], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: driverEnvironment });
 let driverLog = '';
 driver.stdout.on('data', chunk => { driverLog += chunk; });
 driver.stderr.on('data', chunk => { driverLog += chunk; });
+driver.on('error', error => { driverLog += `Driver process error: ${error.message}\n`; });
 const endpoint = `http://127.0.0.1:${port}`;
 let session;
 let checks = 0;
@@ -68,7 +87,8 @@ try {
     try { await request('GET', '/status'); break; } catch { await delay(100); }
   }
   console.log(`Starting native session: ${binary} (up to 120 seconds for cold WebView2 startup)`);
-  const result = await request('POST', '/session', { capabilities: { alwaysMatch: { 'tauri:options': { application: binary } } } }, 120_000);
+  const result = await request('POST', '/session', { capabilities }, 120_000);
+  launchDiagnostics.returnedCapabilities = result.capabilities;
   session = result.sessionId;
   await request('POST', `/session/${session}/timeouts`, { implicit: 5000, script: 10000 });
   await waitFor('return document.documentElement.dataset.ready === "true"', 'application loads');
@@ -212,9 +232,14 @@ try {
   });
   console.log(`${checks} real desktop checks passed.`);
 } catch (error) {
+  launchDiagnostics.failure = error.stack;
   console.error(driverLog);
   throw error;
 } finally {
+  launchDiagnostics.profileEntries = existsSync(profile) ? readdirSync(profile) : [];
+  launchDiagnostics.devToolsActivePortExists = existsSync(resolve(profile, 'EBWebView/DevToolsActivePort'));
+  writeFileSync('test-results/desktop-launch.json', JSON.stringify(launchDiagnostics, null, 2));
+  writeFileSync('test-results/desktop-driver.log', driverLog);
   if (session) await request('DELETE', `/session/${session}`).catch(() => {});
   driver.kill();
 }

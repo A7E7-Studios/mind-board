@@ -23,6 +23,8 @@ node src-tauri/tests/desktop.e2e.mjs
 
 Environment overrides: `MIND_BOARD_BINARY`, `TAURI_DRIVER`, `EDGE_DRIVER`, and `WEBDRIVER_PORT`. Use `MIND_BOARD_BINARY=src-tauri/target/debug/mind-board.exe` when testing a debug build.
 
+The harness passes its isolated profile and optional `WEBVIEW2_BROWSER_EXECUTABLE_FOLDER` through `tauri:options.webviewOptions`, then removes inherited profile/runtime overrides from the driver environment. This keeps EdgeDriver's DevTools discovery and WebView2 on the same configuration. Microsoft documents these settings in [WebView2 driver capabilities](https://learn.microsoft.com/en-us/microsoft-edge/webdriver/capabilities-edge-options#webviewoptions-object). Startup diagnostics are written to `test-results/desktop-launch.json` and `test-results/desktop-driver.log`, including the selected runtime, requested/returned capabilities, driver identification, and whether the profile produced `DevToolsActivePort`.
+
 The full browser end-to-end suite is `npm run test:e2e`. Native OS dialog interaction is checked separately using Windows computer-use automation; it is not part of the repeatable WebDriver script. Browser file chooser coverage and Rust IPC tests do not substitute for those OS interactions.
 
 ## Native verification record — 2026-09-07
