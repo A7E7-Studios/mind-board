@@ -333,12 +333,13 @@ try {
     await shortcut('c');
     await waitFor('return document.querySelector("#toast").textContent.includes("Image copied")', 'image copied to OS clipboard');
     const copied = await probe.command('read');
-    await probe.command('claim');
     assert.equal(copied.image, true, 'Windows Clipboard.GetImage must read the copied PNG');
     assert.equal(copied.width, 1920);
     assert.equal(copied.height, 512);
     const expected = Array.from({ length: 8 }, (_, x) => [x % 4 < 2 ? 0 : 255, x % 4 < 2 ? 0 : 255, x % 4 < 2 ? 0 : 255, 255]).flat();
     assert(copied.samples.flat().length === expected.length && copied.samples.flat().every((value, index) => value === expected[index]), 'Windows clipboard pixels must match the generated fixture');
+    // Only restore over clipboard content verified to be our own fixture.
+    await probe.command('claim');
     launchDiagnostics.windowsClipboardImage = copied;
     await shortcut('v');
     await waitFor(`return document.querySelectorAll('.board-item img').length === ${imageCount + 1}`, 'native clipboard pasted into board');
