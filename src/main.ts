@@ -20,13 +20,17 @@ import {
   saveBoardFile,
   setAlwaysOnTop,
   setFullscreen,
+  startWindowDrag,
+  minimizeWindow,
+  closeWindow,
+  installCloseHandler,
 } from "./platform";
 import { icon } from "./icons";
 
 const button = (label: string, glyph: string, action: string, extra = "") =>
   `<button type="button" aria-label="${label}" title="${label}" data-action="${action}" ${extra}>${icon(glyph)}</button>`;
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
-  <main id="workspace">
+  <main id="workspace" class="focus-mode">
     <header class="topbar">
       <a class="brand" href="#" aria-label="MindBoard home"><span class="brand-mark"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 19V5l8 9 8-9v14" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/></svg></span><span>mindboard<span class="version"> / 01</span></span></a>
       <span class="header-divider"></span>
@@ -45,6 +49,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
     <section id="canvas" data-testid="canvas" aria-label="Reference board canvas" tabindex="0">
       <div id="world" role="listbox" aria-label="References" aria-multiselectable="true"></div>
       <div id="empty-state">
+        <div class="minimal-empty"><button data-action="import" aria-label="Import images">${icon("image")}<span>Drop images here</span></button><p>Right-click for tools <span>·</span> Tab to show controls</p></div>
         <div class="empty-art" aria-hidden="true"><div class="art-card art-back"><span></span></div><div class="art-card art-middle"><span></span></div><div class="art-card art-front">${icon("image")}<i></i></div><span class="art-spark">+</span></div>
         <p class="eyebrow">ROOM TO THINK</p><h1>A quiet place for<br>your references.</h1>
         <p class="empty-description">Bring your inspiration together.<br>Drop images anywhere, and make space for ideas.</p>
@@ -64,7 +69,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <div class="floating-bar zoom-tools">${button("Zoom out", "minus", "zoom-out")}<button data-action="reset-zoom" aria-label="Reset zoom" title="Reset zoom · 1" id="zoom-label">100%</button>${button("Zoom in", "plus", "zoom-in")}<span class="tool-divider"></span>${button("Fit all", "fit", "fit")}</div>
     </div>
     <footer><div><span class="status-dot"></span><span id="save-status" role="status">Ready</span></div><span id="item-count">0 references</span><button data-action="help" aria-label="Keyboard shortcuts" title="Keyboard shortcuts · ?">${icon("help")}</button></footer>
-    <button id="exit-focus" data-action="focus" hidden>${icon("focus")}<span>Exit focus</span><kbd>Tab</kbd></button>
+    <button id="exit-focus" data-action="focus" aria-label="Show controls" title="Show controls · Tab">${icon("more")}</button>
+    <div id="context-menu" class="menu context-menu" role="menu" aria-label="Board tools" hidden></div>
     <div id="toast" role="status" hidden></div>
     <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/avif" multiple hidden />
     <dialog id="note-dialog"><form method="dialog" id="note-form"><div class="dialog-heading"><h2 id="note-title">Add a note</h2><button value="cancel" aria-label="Close note" formnovalidate>${icon("close")}</button></div><p>A thought, a direction, a little context.</p><textarea aria-label="Note text" id="note-text" placeholder="What’s on your mind?" maxlength="10000" required rows="6"></textarea><div class="dialog-actions"><button value="cancel" formnovalidate>Cancel</button><button class="primary" id="note-submit" value="save">Add note</button></div></form></dialog>
@@ -83,7 +89,14 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       ["Actual size", "1"],
       ["Open / save board", "Ctrl / ⌘ O / S"],
       ["New board", "Ctrl / ⌘ N"],
-      ["Focus mode", "Tab"],
+      ["Show / hide controls", "Tab"],
+      ["Tools menu", "Right-click / Shift F10"],
+      ...(isDesktop
+        ? [
+            ["Move window", "Alt + drag"],
+            ["Close window", "Ctrl / ⌘ Q"],
+          ]
+        : []),
       ["Fullscreen", "F11"],
       ["Close / deselect", "Esc"],
       ["Show shortcuts", "?"],
@@ -95,6 +108,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
         "",
       )}</div><p class="help-footer">Your images stay on this device. No accounts. No cloud. Just your ideas.</p></dialog>
     <dialog id="confirm-dialog"><h2>Start a fresh board?</h2><p>The current board’s recovery will be replaced.<br>Save a board file first if you want to keep it.</p><div class="dialog-actions"><button data-action="cancel-new">Cancel</button><button class="primary" data-action="confirm-new">New board</button></div></dialog>
+    <dialog id="close-dialog"><h2>Keep your changes before closing</h2><p>Local recovery could not save your latest changes. Save a board file to keep them.</p><div class="dialog-actions"><button data-action="cancel-close">Cancel</button><button data-action="discard-close">Close without saving</button><button class="primary" data-action="save-close">Save and close</button></div></dialog>
   </main>`;
 
 const $ = <T extends HTMLElement = HTMLElement>(selector: string) =>
@@ -107,13 +121,19 @@ let view: View = { x: 0, y: 0, zoom: 1 };
 let selected = new Set<string>();
 let preview: Board | null = null;
 let spaceDown = false;
-let focusMode = false;
+let focusMode = true;
+let windowMoveArmed = false;
+let contextPoint: { x: number; y: number } | null = null;
+let importPoint: { x: number; y: number } | null = null;
+let notePoint: { x: number; y: number } | null = null;
 let pinned = false;
 let fullscreen = false;
 let noteId: string | null = null;
 let toastTimer: ReturnType<typeof setTimeout>;
 let persistQueue = Promise.resolve();
 let revision = 0;
+let recoveredRevision = 0;
+let exportedRevision = -1;
 let importQueue = Promise.resolve();
 let documentGeneration = 0;
 let ready = false;
@@ -137,6 +157,7 @@ function persist() {
     .catch(() => {})
     .then(() => saveRecovery(board))
     .then(() => {
+      recoveredRevision = current;
       if (revision === current)
         $("#save-status").textContent = "Saved on this device";
     })
@@ -464,9 +485,89 @@ function manipulate(action: string) {
     );
   }
 }
+function hideContextMenu(restoreFocus = false) {
+  $("#context-menu").hidden = true;
+  contextPoint = null;
+  if (restoreFocus) canvas.focus({ preventScroll: true });
+}
+function cancelWindowMove() {
+  windowMoveArmed = false;
+  canvas.classList.remove("move-window");
+}
+
+function showContextMenu(point: { x: number; y: number }, keyboard = false) {
+  if (!ready) return;
+  finishGesture(false);
+  if (!keyboard) {
+    const node = document
+      .elementFromPoint(point.x, point.y)
+      ?.closest<HTMLElement>(".board-item");
+    if (node?.dataset.id) {
+      if (!selected.has(node.dataset.id)) selected = new Set([node.dataset.id]);
+    } else selected.clear();
+    render();
+  }
+  contextPoint = worldPoint(localPoint({ clientX: point.x, clientY: point.y }));
+  $("#board-menu").hidden = true;
+  $('[data-action="menu"]').setAttribute("aria-expanded", "false");
+  const menu = $("#context-menu");
+  const entry = (
+    label: string,
+    glyph: string,
+    name: string,
+    key = "",
+    disabled = false,
+  ) =>
+    `<button role="menuitem" type="button" aria-label="${label}" data-action="${name}" ${disabled ? "disabled" : ""}>${icon(glyph)}<span>${label}</span>${key ? `<kbd>${key}</kbd>` : ""}</button>`;
+  const divider = '<div class="menu-divider" role="separator"></div>';
+  const targets = history.board.items.filter((i) => selected.has(i.id));
+  const locked = targets.length > 0 && targets.every((i) => i.locked);
+  menu.innerHTML =
+    `<div class="context-heading">${selected.size ? `${selected.size} selected` : "MindBoard"}</div>` +
+    (selected.size
+      ? `<div class="context-selection">${entry("Duplicate", "copy", "duplicate", "Ctrl D")}${entry("Delete", "trash", "delete", "Del", locked)}${entry("Arrange", "grid", "arrange")}${entry(locked ? "Unlock selection" : "Lock selection", "lock", "lock")}${entry("Rotate left", "rotate", "rotate-left", "", locked)}${entry("Rotate right", "rotate", "rotate-right", "", locked)}${entry("Bring to front", "front", "front", "", locked)}${entry("Send to back", "back", "back", "", locked)}</div>${divider}`
+      : "") +
+    entry("Import images", "image", "import", "I") +
+    entry("Add note", "note", "note", "N") +
+    divider +
+    entry("Open board", "folder", "open", "Ctrl O") +
+    entry("Save board", "save", "save", "Ctrl S") +
+    entry("New board", "plus", "new", "Ctrl N") +
+    divider +
+    `<div class="context-pair">${entry("Undo", "undo", "undo", "", !history.canUndo)}${entry("Redo", "redo", "redo", "", !history.canRedo)}</div>` +
+    divider +
+    entry("Fit all", "fit", "fit", "F") +
+    entry("Reset zoom", "plus", "reset-zoom", "1") +
+    entry(
+      focusMode ? "Show controls" : "Hide controls",
+      "focus",
+      "focus",
+      "Tab",
+    ) +
+    entry("Fullscreen", "focus", "fullscreen", "F11") +
+    (isDesktop
+      ? entry(pinned ? "Always on top: on" : "Always on top", "pin", "pin") +
+        divider +
+        entry("Move window", "move", "move-window", "Alt drag") +
+        `<div class="context-pair">${entry("Minimize", "minus", "minimize")}${entry("Close window", "close", "close-window")}</div>`
+      : "") +
+    divider +
+    entry("Keyboard shortcuts", "help", "help", "?");
+  menu.hidden = false;
+  const rect = menu.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(point.x, window.innerWidth - rect.width - 8))}px`;
+  menu.style.top = `${Math.max(8, Math.min(point.y, window.innerHeight - rect.height - 8))}px`;
+  menu.scrollTop = 0;
+  menu
+    .querySelector<HTMLButtonElement>("button:not(:disabled)")
+    ?.focus({ preventScroll: true });
+}
+
 async function action(name: string) {
   if (!ready) return;
   finishGesture(false);
+  const at = contextPoint;
+  if (!$("#context-menu").hidden) hideContextMenu(true);
   if (name !== "menu") {
     $("#board-menu").hidden = true;
     $('[data-action="menu"]').setAttribute("aria-expanded", "false");
@@ -474,22 +575,27 @@ async function action(name: string) {
   try {
     switch (name) {
       case "import":
+        importPoint = at;
         $<HTMLInputElement>("#image-input").click();
         break;
       case "note":
+        notePoint = at;
         editNote();
         break;
       case "save": {
         await importQueue;
         nameInput.blur();
         const board = history.board;
+        const fileRevision = revision;
         if (
           await saveBoardFile(
             serializeBoard(board),
             `${board.name.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_") || "Untitled board"}.mindboard`,
           )
-        )
+        ) {
+          exportedRevision = fileRevision;
           toast("Board file saved. Your images are included.");
+        }
         break;
       }
       case "open": {
@@ -508,6 +614,7 @@ async function action(name: string) {
         documentGeneration++;
         selected.clear();
         commit(board);
+        exportedRevision = revision;
         fit();
         toast("Board opened");
         break;
@@ -579,10 +686,42 @@ async function action(name: string) {
       case "close-help":
         $<HTMLDialogElement>("#help-dialog").close();
         break;
-      case "focus":
+      case "focus": {
+        const previous = canvas.getBoundingClientRect();
         focusMode = !focusMode;
         $("#workspace").classList.toggle("focus-mode", focusMode);
         $("#exit-focus").hidden = !focusMode;
+        const next = canvas.getBoundingClientRect();
+        view.x += previous.left - next.left;
+        view.y += previous.top - next.top;
+        renderView();
+        canvas.focus({ preventScroll: true });
+        break;
+      }
+      case "move-window":
+        windowMoveArmed = true;
+        canvas.classList.add("move-window");
+        toast("Drag anywhere to move the window. Escape cancels.");
+        break;
+      case "minimize":
+        await minimizeWindow();
+        break;
+      case "close-window":
+        await importQueue;
+        await persistQueue;
+        if (recoveredRevision < revision && exportedRevision < revision)
+          $<HTMLDialogElement>("#close-dialog").showModal();
+        else await closeWindow();
+        break;
+      case "cancel-close":
+        $<HTMLDialogElement>("#close-dialog").close();
+        break;
+      case "discard-close":
+        await closeWindow();
+        break;
+      case "save-close":
+        await action("save");
+        if (exportedRevision >= revision) await closeWindow();
         break;
       case "pin":
         await setAlwaysOnTop(!pinned);
@@ -613,6 +752,45 @@ document.addEventListener("click", (e) => {
     $('[data-action="menu"]').setAttribute("aria-expanded", "false");
   }
 });
+document.addEventListener(
+  "pointerdown",
+  (e) => {
+    if (!(e.target as HTMLElement).closest("#context-menu")) hideContextMenu();
+  },
+  { capture: true },
+);
+$("#context-menu").addEventListener("keydown", (e) => {
+  if (e.key === " " && (e.target as HTMLElement).closest("button")) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!e.repeat)
+      (e.target as HTMLElement).closest<HTMLButtonElement>("button")?.click();
+    return;
+  }
+  if (!["ArrowDown", "ArrowUp", "Home", "End", "Escape", "Tab"].includes(e.key))
+    return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.key === "Escape" || e.key === "Tab") {
+    if (e.key === "Escape") cancelWindowMove();
+    hideContextMenu(true);
+    return;
+  }
+  const items = Array.from(
+    $("#context-menu").querySelectorAll<HTMLButtonElement>(
+      "button:not(:disabled)",
+    ),
+  );
+  const index = items.indexOf(document.activeElement as HTMLButtonElement);
+  const next =
+    e.key === "Home"
+      ? 0
+      : e.key === "End"
+        ? items.length - 1
+        : (index + (e.key === "ArrowDown" ? 1 : -1) + items.length) %
+          items.length;
+  items[next]?.focus();
+});
 $(".brand").addEventListener("click", (e) => {
   e.preventDefault();
   fit();
@@ -627,7 +805,8 @@ nameInput.addEventListener("keydown", (e) => {
 });
 $<HTMLInputElement>("#image-input").addEventListener("change", (e) => {
   const input = e.target as HTMLInputElement;
-  void importImages(Array.from(input.files ?? []));
+  void importImages(Array.from(input.files ?? []), importPoint ?? center());
+  importPoint = null;
   input.value = "";
 });
 $("#note-form").addEventListener("submit", (e) => {
@@ -659,7 +838,7 @@ $("#note-form").addEventListener("submit", (e) => {
       toast("A board can contain up to 2,000 references.");
       return;
     }
-    const p = center();
+    const p = notePoint ?? center();
     const id = crypto.randomUUID();
     selected = new Set([id]);
     const height = noteHeight(text, 280);
@@ -703,6 +882,15 @@ type Gesture = {
 };
 let gesture: Gesture | null = null;
 canvas.addEventListener("pointerdown", (e) => {
+  if (ready && isDesktop && e.button === 0 && (e.altKey || windowMoveArmed)) {
+    e.preventDefault();
+    windowMoveArmed = false;
+    canvas.classList.remove("move-window");
+    void startWindowDrag().catch((error) =>
+      toast(`Could not move window: ${String(error)}`),
+    );
+    return;
+  }
   if (
     !ready ||
     gesture ||
@@ -849,7 +1037,21 @@ function finishGesture(cancel: boolean) {
 canvas.addEventListener("pointerup", () => finishGesture(false));
 canvas.addEventListener("pointercancel", () => finishGesture(true));
 canvas.addEventListener("lostpointercapture", () => finishGesture(true));
-canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+canvas.addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  showContextMenu({ x: e.clientX, y: e.clientY });
+});
+$(".topbar").addEventListener("pointerdown", (e) => {
+  if (
+    isDesktop &&
+    e.button === 0 &&
+    !(e.target as HTMLElement).closest("button,input,a")
+  ) {
+    void startWindowDrag().catch((error) =>
+      toast(`Could not move window: ${String(error)}`),
+    );
+  }
+});
 canvas.addEventListener(
   "wheel",
   (e) => {
@@ -901,6 +1103,15 @@ document.addEventListener("paste", (e) => {
 });
 document.addEventListener("keydown", (e) => {
   if (!ready || isEditing(e.target)) return;
+  if ((e.shiftKey && e.key === "F10") || e.key === "ContextMenu") {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    showContextMenu(
+      { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 },
+      true,
+    );
+    return;
+  }
   const command = e.ctrlKey || e.metaKey;
   const key = e.key.toLowerCase();
   let requested: string | undefined;
@@ -919,6 +1130,7 @@ document.addEventListener("keydown", (e) => {
         d: "duplicate",
         z: e.shiftKey ? "redo" : "undo",
         y: "redo",
+        ...(isDesktop ? { q: "close-window" } : {}),
       } as Record<string, string>
     )[key];
   } else {
@@ -929,6 +1141,8 @@ document.addEventListener("keydown", (e) => {
       return;
     }
     if (key === "escape") {
+      cancelWindowMove();
+      hideContextMenu();
       finishGesture(true);
       selected.clear();
       $("#board-menu").hidden = true;
@@ -970,11 +1184,16 @@ window.addEventListener("blur", () => {
   spaceDown = false;
   canvas.classList.remove("space-pan");
   finishGesture(true);
+  hideContextMenu();
+  cancelWindowMove();
 });
 document.addEventListener("fullscreenchange", () => {
   if (!isDesktop) fullscreen = !!document.fullscreenElement;
 });
-window.addEventListener("resize", renderView);
+window.addEventListener("resize", () => {
+  hideContextMenu();
+  renderView();
+});
 async function start() {
   render();
   try {
@@ -991,6 +1210,13 @@ async function start() {
     );
   }
   ready = true;
+  try {
+    await installCloseHandler(() => {
+      void action("close-window");
+    });
+  } catch (error) {
+    toast(`Could not protect unsaved changes on close: ${String(error)}`);
+  }
   render();
   canvas.focus({ preventScroll: true });
   document.documentElement.dataset.ready = "true";

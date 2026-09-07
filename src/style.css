@@ -717,24 +717,127 @@ textarea::placeholder {
 .focus-mode #canvas {
   position: absolute;
   inset: 0;
+  background-image: none;
 }
 .focus-mode #exit-focus {
   position: absolute;
-  right: 20px;
-  bottom: 20px;
-  background: #25292eee;
-  border: 1px solid #ffffff12;
+  right: 8px;
+  bottom: 8px;
+  background: transparent;
+  border: 1px solid transparent;
   z-index: 5;
   font-size: 10px;
-  padding: 7px 11px;
-  opacity: 0.35;
+  padding: 7px;
+  opacity: 0;
 }
 .focus-mode #exit-focus:hover,
 .focus-mode #exit-focus:focus-visible {
   opacity: 1;
+  background: #25292eee;
 }
 .focus-mode #toast {
-  bottom: 70px;
+  bottom: 24px;
+}
+.minimal-empty {
+  display: none;
+}
+.focus-mode #empty-state {
+  top: 50%;
+}
+.focus-mode #empty-state > :not(.minimal-empty) {
+  display: none;
+}
+.focus-mode .minimal-empty {
+  display: block;
+}
+.minimal-empty button {
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px 35px;
+  color: #777f86;
+  font-size: 14px;
+  font-weight: 400;
+}
+.minimal-empty button svg {
+  width: 28px;
+  height: 28px;
+  color: #91a087;
+  opacity: 0.7;
+}
+.minimal-empty p {
+  color: #515861;
+  font-size: 10px;
+  margin-top: 4px;
+}
+.minimal-empty p span {
+  padding: 0 6px;
+}
+.context-menu {
+  position: fixed;
+  width: min(254px, calc(100vw - 16px));
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  right: auto;
+  top: 0;
+  z-index: 20;
+  padding: 5px;
+  scrollbar-width: thin;
+  scrollbar-color: #4a5058 transparent;
+}
+.context-menu button {
+  gap: 11px;
+  min-height: 29px;
+  padding: 5px 9px;
+  justify-content: flex-start;
+  border-radius: 5px;
+  font-size: 11px;
+}
+.context-menu button svg {
+  width: 15px;
+  height: 15px;
+  opacity: 0.75;
+}
+.context-menu button kbd {
+  margin-left: auto;
+  font-size: 9px;
+}
+.context-heading {
+  padding: 8px 10px 9px;
+  font-size: 9px;
+  color: #73806d;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+}
+.context-menu .menu-divider {
+  margin: 4px 5px;
+}
+.context-selection {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 0;
+}
+.context-selection button {
+  font-size: 10px;
+  gap: 6px;
+  padding-left: 7px;
+}
+.context-selection kbd {
+  display: none;
+}
+.context-pair {
+  display: flex;
+}
+.context-pair button {
+  flex: 1;
+}
+.context-menu button:focus-visible {
+  outline-offset: -2px;
+  background: #b8dca310;
+}
+.move-window,
+.move-window .board-item {
+  cursor: move !important;
 }
 @media (min-width: 1600px) {
   h1 {

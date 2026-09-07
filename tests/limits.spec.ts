@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { imageFile, importImages } from "./fixtures";
+import { imageFile, importImages, showControls } from "./fixtures";
 
 /** Real decodable PNG files padded after IEND, constructed in-browser to avoid
  * copying ~100 MiB through the test driver's JSON transport. */
@@ -31,6 +31,7 @@ test.describe("image and board size boundaries", () => {
   test.beforeEach(async ({ page }) => {
     await page.goto("/");
     await expect(page.locator("html")).toHaveAttribute("data-ready", "true");
+    await showControls(page);
   });
 
   test("rejects a file one byte over 20 MiB and preserves existing recovery", async ({
@@ -46,6 +47,7 @@ test.describe("image and board size boundaries", () => {
     await expect(page.locator("#toast")).toContainText("under 20 MB");
     await expect(page.getByTestId("board-item")).toHaveCount(1);
     await page.reload();
+    await showControls(page);
     await expect(page.locator("html")).toHaveAttribute("data-ready", "true");
     await expect(
       page.locator('.board-item[aria-label="keep-me.png"]'),
@@ -71,6 +73,7 @@ test.describe("image and board size boundaries", () => {
       2,
     );
     await page.reload();
+    await showControls(page);
     await expect(page.locator("html")).toHaveAttribute("data-ready", "true", {
       timeout: 30_000,
     });
@@ -101,6 +104,7 @@ test.describe("image and board size boundaries", () => {
       page.locator('.board-item[aria-label="original.png"]'),
     ).toHaveCount(1);
     await page.reload();
+    await showControls(page);
     await expect(page.locator("html")).toHaveAttribute("data-ready", "true");
     await expect(
       page.locator('.board-item[aria-label="original.png"]'),

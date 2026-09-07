@@ -6,6 +6,7 @@ import {
   imageFile,
   importImages,
   openBoard,
+  showControls,
 } from "./fixtures";
 
 const browserErrors = new WeakMap<Page, string[]>();
@@ -17,6 +18,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("data-ready", "true");
   await expect(page.getByTestId("canvas")).toBeVisible();
+  await showControls(page);
 });
 
 test.afterEach(async ({ page }) => {
@@ -255,6 +257,7 @@ test("recovers the board and its name after a browser reload", async ({
   await page.getByRole("textbox", { name: "Board name" }).blur();
   await expect(page.locator("#save-status")).toHaveText("Saved on this device");
   await page.reload();
+  await showControls(page);
   await expect(boardItem(page, "recovered.png")).toBeVisible();
   await expect(page.getByRole("textbox", { name: "Board name" })).toHaveValue(
     "Recovered study",
@@ -661,6 +664,7 @@ test("very thin images remain valid across saving and recovery", async ({
   const download = await downloadEvent;
   expect(download.suggestedFilename()).toMatch(/\.mindboard$/);
   await page.reload();
+  await showControls(page);
   await expect(boardItem(page, "thin.png")).toBeVisible();
   await expect(boardItem(page, "thin.png").locator("img")).toHaveJSProperty(
     "naturalHeight",
@@ -791,6 +795,7 @@ test("the app remains usable when local recovery storage is unavailable", async 
   });
   await page.reload();
   await expect(page.locator("html")).toHaveAttribute("data-ready", "true");
+  await showControls(page);
   await expect(page.locator("#save-status")).toContainText(
     "Recovery unavailable",
   );

@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export const isDesktop = isTauri();
+let closeApproved = false;
 
 export async function saveBoardFile(
   contents: string,
@@ -74,4 +75,33 @@ export async function setFullscreen(value: boolean): Promise<void> {
   if (value && !document.fullscreenElement)
     await document.documentElement.requestFullscreen();
   if (!value && document.fullscreenElement) await document.exitFullscreen();
+}
+
+export async function startWindowDrag(): Promise<void> {
+  if (isDesktop) await getCurrentWindow().startDragging();
+}
+
+export async function minimizeWindow(): Promise<void> {
+  if (isDesktop) await getCurrentWindow().minimize();
+}
+
+export async function closeWindow(): Promise<void> {
+  if (!isDesktop) return;
+  closeApproved = true;
+  try {
+    await getCurrentWindow().close();
+  } catch (error) {
+    closeApproved = false;
+    throw error;
+  }
+}
+
+export async function installCloseHandler(handler: () => void): Promise<void> {
+  if (!isDesktop) return;
+  await getCurrentWindow().onCloseRequested((event) => {
+    if (!closeApproved) {
+      event.preventDefault();
+      handler();
+    }
+  });
 }

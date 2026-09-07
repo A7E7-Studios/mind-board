@@ -2,7 +2,13 @@ name: Validate MindBoard
 
 on:
   push:
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - 'README.md'
   workflow_dispatch:
 
 permissions:
@@ -23,6 +29,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri -> target
+          cache-on-failure: true
       - run: npm ci
       - run: npm run format:check
       - run: npm run check
@@ -30,14 +37,33 @@ jobs:
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: npm run test:native
       - run: npm run desktop:build -- --no-bundle
+      - uses: actions/cache@v4
+        with:
+          path: src-tauri/.tools/bin
+          key: windows-x64-tauri-driver-2.0.6
       - name: Prepare Windows WebDriver
         shell: pwsh
         run: |
-          cargo install tauri-driver --locked --root src-tauri/.tools
-          $edgeBinary = "${env:ProgramFiles(x86)}/Microsoft/Edge/Application/msedge.exe"
-          $edgeVersion = (Get-Item -LiteralPath $edgeBinary).VersionInfo.FileVersion
+          if (-not (Test-Path -LiteralPath src-tauri/.tools/bin/tauri-driver.exe)) {
+            cargo install tauri-driver --version 2.0.6 --locked --root src-tauri/.tools
+          }
+          function Get-WebViewRuntime {
+            $roots = @("${env:ProgramFiles(x86)}/Microsoft/EdgeWebView/Application", "$env:LOCALAPPDATA/Microsoft/EdgeWebView/Application")
+            $roots | Where-Object { Test-Path -LiteralPath $_ } | ForEach-Object { Get-ChildItem -LiteralPath $_ -Directory } | Where-Object Name -Match '^\d+\.\d+\.\d+\.\d+$' | Sort-Object { [version]$_.Name } -Descending | Select-Object -First 1
+          }
+          $runtime = Get-WebViewRuntime
+          if (-not $runtime) {
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile src-tauri/.tools/WebView2Setup.exe
+            $install = Start-Process -FilePath src-tauri/.tools/WebView2Setup.exe -ArgumentList '/silent','/install' -WindowStyle Hidden -Wait -PassThru
+            if ($install.ExitCode -ne 0) { throw "WebView2 installation failed: $($install.ExitCode)" }
+            $runtime = Get-WebViewRuntime
+          }
+          if (-not $runtime) { throw 'The WebView2 runtime is required for native tests.' }
+          $webviewVersion = $runtime.Name
+          "WEBVIEW2_BROWSER_EXECUTABLE_FOLDER=$($runtime.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Using WebView2 $webviewVersion from $($runtime.FullName)"
           New-Item -ItemType Directory -Force src-tauri/.tools/edge | Out-Null
-          Invoke-WebRequest "https://msedgedriver.microsoft.com/$edgeVersion/edgedriver_win64.zip" -OutFile src-tauri/.tools/edge.zip
+          Invoke-WebRequest "https://msedgedriver.microsoft.com/$webviewVersion/edgedriver_win64.zip" -OutFile src-tauri/.tools/edge.zip
           Expand-Archive -LiteralPath src-tauri/.tools/edge.zip -DestinationPath src-tauri/.tools/edge -Force
       - run: npm run test:desktop
       - uses: actions/upload-artifact@v4
@@ -50,4 +76,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: MindBoard-Windows
-          path: src-tauri/target/release/mind-board.exe
+          path: |
+            src-tauri/target/release/mind-board.exe
+            LICENSE
+            THIRD_PARTY_NOTICES.txt

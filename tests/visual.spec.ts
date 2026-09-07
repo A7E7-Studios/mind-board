@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { openBoard } from "./fixtures";
+import { openBoard, showControls } from "./fixtures";
 
 test("renders the empty and populated workspace at desktop size", async ({
   page,
@@ -8,6 +8,10 @@ test("renders the empty and populated workspace at desktop size", async ({
   await page.goto("/");
   await expect(page.locator("html")).toHaveAttribute("data-ready", "true");
   await page.screenshot({ path: "docs/screenshots/empty-board.png" });
+  await showControls(page);
+  await page.screenshot({
+    path: "docs/screenshots/full-controls-empty-board.png",
+  });
 
   // Original canvas drawings provide self-contained, reproducible reference artwork.
   const images = await page.evaluate(() => {
@@ -95,6 +99,11 @@ test("renders the empty and populated workspace at desktop size", async ({
   // Dismiss the transient import notification before capturing the resting workspace.
   await expect(page.locator("#toast")).not.toBeVisible({ timeout: 6000 });
   await page.mouse.move(20, 90);
+  await page.screenshot({ path: "docs/screenshots/full-controls-board.png" });
+  await page.getByTestId("canvas").focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("f");
+  await expect(page.locator(".topbar")).not.toBeVisible();
   await page.screenshot({ path: "docs/screenshots/populated-board.png" });
   for (const item of await page.getByTestId("board-item").all())
     await expect(item).toBeInViewport();

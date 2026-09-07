@@ -65,6 +65,16 @@ export async function importImages(page: Page, names = ["reference.png"]) {
   );
 }
 
+/** Regression tests explicitly opt into the optional full control layout. */
+export async function showControls(page: Page) {
+  await expect(page.locator("html")).toHaveAttribute("data-ready", "true");
+  if (!(await page.locator(".topbar").isVisible())) {
+    await page.getByTestId("canvas").focus();
+    await page.keyboard.press("Tab");
+  }
+  await expect(page.locator(".topbar")).toBeVisible();
+}
+
 export const boardItem = (page: Page, name = "reference.png") =>
   page.locator(`.board-item[aria-label="${name}"]`);
 

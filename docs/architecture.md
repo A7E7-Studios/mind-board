@@ -14,6 +14,8 @@ MindBoard is a Vite/TypeScript frontend inside a Tauri 2 desktop shell. The brow
 
 The document contains only item data: stable IDs, geometry, rotation, locking, note text, and embedded raster data URLs. Viewport and selection are transient. Item array order is stacking order. History owns immutable snapshots and retains at most 100 entries. Image strings are shared between snapshots instead of being re-encoded.
 
+The app starts with a borderless canvas and hidden controls. Its contextual menu dispatches the same actions as the optional toolbars and keyboard shortcuts. Switching controls compensates for the canvas's changed screen origin so references do not jump. Native move, minimize, and close live behind the platform adapter. Closing waits for queued imports and recovery, and offers save/cancel/discard if the latest document is not stored successfully.
+
 A pointer gesture previews changes from one captured document. It commits once at pointer release, or rolls back on cancellation, lost capture, Escape, or loss of window focus. Other document actions finish a pending gesture first. Image imports run through a serial queue, and a document generation token discards imports that belong to a board replaced by New/Open.
 
 Every document commit validates against the portable board schema. Recovery writes are serialized so an older write cannot overwrite a newer one. The UI reports successful persistence only after the IndexedDB transaction completes. Import and open failures preserve the current document.

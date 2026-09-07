@@ -8,6 +8,7 @@ An original application inspired by the reference-board workflow: put images on 
 
 ## Features
 
+- A borderless, plain canvas by default. Right-click for tools; press Tab to reveal the full interface.
 - Import multiple PNG, JPEG, WebP, GIF, or AVIF images; drag files onto the canvas or paste clipboard images.
 - Pan with Space + drag or the middle mouse button; zoom around the cursor with the wheel.
 - Select, Shift-select, marquee-select, move, proportionally resize, rotate, arrange, duplicate, and reorder references.
@@ -15,7 +16,7 @@ An original application inspired by the reference-board workflow: put images on 
 - Undo and redo document edits, including whole pointer gestures.
 - Save portable `.mindboard` files with embedded images; reopen them without their original source files.
 - Automatic local recovery in IndexedDB after each document edit.
-- Focus mode, fullscreen, and desktop always-on-top mode.
+- Optional full controls, fullscreen, and desktop always-on-top mode. Alt-drag moves the desktop window; window controls also live in the right-click menu.
 - Keyboard shortcuts, accessible controls, and a compact, responsive interface.
 
 ## Run locally
@@ -72,12 +73,15 @@ npm run test:desktop
 | Undo / redo | `Ctrl` or `⌘` + `Z` / `Shift Z` |
 | Open / save / new board | `Ctrl` or `⌘` + `O` / `S` / `N` |
 | Delete unlocked selection | `Delete` or `Backspace` |
-| Focus mode | `Tab` while the canvas is focused |
+| Show / hide controls | `Tab` while the canvas is focused |
+| Tools menu | Right-click or `Shift F10` |
+| Move desktop window | `Alt` + drag, or right-click → Move window then drag |
+| Close desktop window | Right-click → Close window, or `Ctrl` / `⌘` + `Q` |
 | Fullscreen | `F11` |
 | Deselect / cancel gesture / close dialog | `Escape` |
 | Shortcut help | `?` |
 
-Tab navigates controls normally when a control has focus. Text fields keep their editing shortcuts. Double-click a note to edit it.
+Tab navigates controls normally when a control has focus in the full interface. Text fields keep their editing shortcuts. Double-click a note to edit it. The right-click menu also supports arrow keys, Enter, Space, and Escape. Showing or hiding controls preserves references' positions on screen.
 
 ## Files and recovery
 

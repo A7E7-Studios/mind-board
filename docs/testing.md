@@ -21,7 +21,9 @@ The test layers are deliberately separate. Browser automation verifies the produ
 | Undo/redo branching and snapshot isolation | Unit tests plus interaction regressions |
 | Recovery and storage failure | IndexedDB unit tests and reload E2E |
 | Help, focus, fullscreen and shortcuts | Playwright interface tests |
+| Default minimal canvas and right-click tools | Contextual action round trips, keyboard navigation/Space, viewport clamping, optional bars and native undecorated state |
 | Always-on-top and native fullscreen | Real Tauri WebDriver commands with native state assertions |
+| Native minimize and close | Real window-state checks; failed recovery blocks close until save/discard/cancel; system close request exercises the same guard |
 | Native save/open | Rust IPC/file round trips and actual Windows dialog checks |
 | Capability restrictions | Real desktop IPC rejection of arbitrary filesystem access |
 | Responsive UI and runtime errors | Narrow-window smoke tests; every browser test checks uncaught errors |

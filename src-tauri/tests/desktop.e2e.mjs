@@ -22,15 +22,19 @@ driver.stderr.on('data', chunk => { driverLog += chunk; });
 const endpoint = `http://127.0.0.1:${port}`;
 let session;
 let checks = 0;
-async function request(method, path, data) {
-  const response = await fetch(`${endpoint}${path}`, {
-    method, headers: { 'Content-Type': 'application/json' },
-    ...(data === undefined ? {} : { body: JSON.stringify(data) }),
-    signal: AbortSignal.timeout(30_000),
-  });
-  const body = await response.json();
-  if (!response.ok) throw new Error(JSON.stringify(body));
-  return body.value;
+async function request(method, path, data, timeout = 30_000) {
+  try {
+    const response = await fetch(`${endpoint}${path}`, {
+      method, headers: { 'Content-Type': 'application/json' },
+      ...(data === undefined ? {} : { body: JSON.stringify(data) }),
+      signal: AbortSignal.timeout(timeout),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(`HTTP ${response.status}: ${JSON.stringify(body)}`);
+    return body.value;
+  } catch (error) {
+    throw new Error(`WebDriver ${method} ${path} failed (timeout ${timeout}ms): ${error.message}`, { cause: error });
+  }
 }
 const execute = (script, args = []) => request('POST', `/session/${session}/execute/sync`, { script, args });
 async function waitFor(script, description) {
@@ -41,9 +45,21 @@ async function waitFor(script, description) {
   throw new Error(`Timed out: ${description}`);
 }
 async function click(label) {
-  const element = await request('POST', `/session/${session}/element`, { using: 'xpath', value: `//button[@aria-label=${JSON.stringify(label)} or normalize-space(text())=${JSON.stringify(label)}]` });
-  const id = element['element-6066-11e4-a52e-4f735466cecf'];
-  await request('POST', `/session/${session}/element/${id}/click`, {});
+  const elements = await request('POST', `/session/${session}/elements`, { using: 'xpath', value: `//button[@aria-label=${JSON.stringify(label)} or normalize-space(text())=${JSON.stringify(label)}]` });
+  for (const element of elements) {
+    const id = element['element-6066-11e4-a52e-4f735466cecf'];
+    if (await request('GET', `/session/${session}/element/${id}/displayed`)) {
+      await request('POST', `/session/${session}/element/${id}/click`, {});
+      return;
+    }
+  }
+  throw new Error(`No visible button: ${label}`);
+}
+async function rightClickCanvas() {
+  await request('POST', `/session/${session}/actions`, { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+    { type: 'pointerMove', duration: 0, x: 180, y: 180, origin: 'viewport' },
+    { type: 'pointerDown', button: 2 }, { type: 'pointerUp', button: 2 },
+  ] }] });
 }
 async function check(name, test) { await test(); checks++; console.log(`PASS ${name}`); }
 
@@ -51,13 +67,24 @@ try {
   for (let attempt = 0; attempt < 100; attempt++) {
     try { await request('GET', '/status'); break; } catch { await delay(100); }
   }
-  const result = await request('POST', '/session', { capabilities: { alwaysMatch: { 'tauri:options': { application: binary } } } });
+  console.log(`Starting native session: ${binary} (up to 120 seconds for cold WebView2 startup)`);
+  const result = await request('POST', '/session', { capabilities: { alwaysMatch: { 'tauri:options': { application: binary } } } }, 120_000);
   session = result.sessionId;
   await request('POST', `/session/${session}/timeouts`, { implicit: 5000, script: 10000 });
   await waitFor('return document.documentElement.dataset.ready === "true"', 'application loads');
   await check('runs as a real Tauri desktop app', async () => {
     assert.equal(await execute('return !!window.__TAURI_INTERNALS__'), true);
     assert.match(await execute('return document.title'), /MindBoard/);
+  });
+  await check('starts as a borderless canvas with its optional controls hidden', async () => {
+    assert.equal(await execute('return getComputedStyle(document.querySelector(".topbar")).visibility === "hidden" || getComputedStyle(document.querySelector(".topbar")).display === "none"'), true);
+    assert.equal(await execute('return getComputedStyle(document.querySelector(".bottom-controls")).visibility === "hidden" || getComputedStyle(document.querySelector(".bottom-controls")).display === "none"'), true);
+    const decorated = await request('POST', `/session/${session}/execute/async`, {
+      script: `const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke('plugin:window|is_decorated', { label: 'main' }).then(done, error => done(String(error)));`, args: [],
+    });
+    assert.equal(decorated, false);
+    await execute('document.querySelector("#canvas").dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", code: "Tab", bubbles: true }))');
+    await waitFor('return getComputedStyle(document.querySelector(".topbar")).visibility === "visible" && getComputedStyle(document.querySelector(".topbar")).display !== "none"', 'optional controls shown');
   });
   await check('Always on top menu toggles the actual native window state', async () => {
     for (const expected of [true, false]) {
@@ -120,6 +147,69 @@ try {
   mkdirSync('test-results', { recursive: true });
   const screenshot = await request('GET', `/session/${session}/screenshot`);
   writeFileSync('test-results/desktop.png', Buffer.from(screenshot, 'base64'));
+  await check('context menu minimizes the actual native window and it can be restored', async () => {
+    await rightClickCanvas();
+    await click('Minimize');
+    const minimized = await request('POST', `/session/${session}/execute/async`, {
+      script: `const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke('plugin:window|is_minimized', { label: 'main' }).then(done, error => done(String(error)));`, args: [],
+    });
+    assert.equal(minimized, true);
+    await request('POST', `/session/${session}/window/maximize`, {});
+    const restored = await request('POST', `/session/${session}/execute/async`, {
+      script: `const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke('plugin:window|is_minimized', { label: 'main' }).then(done, error => done(String(error)));`, args: [],
+    });
+    assert.equal(restored, false);
+  });
+  await check('Escape in a reopened context menu cancels the armed window move', async () => {
+    await rightClickCanvas();
+    await click('Move window');
+    await waitFor('return document.querySelector("#canvas").classList.contains("move-window")', 'window move armed');
+    await rightClickCanvas();
+    await request('POST', `/session/${session}/actions`, { actions: [{ type: 'key', id: 'keyboard', actions: [
+      { type: 'keyDown', value: '\uE00C' }, { type: 'keyUp', value: '\uE00C' },
+    ] }] });
+    await waitFor('return !document.querySelector("#canvas").classList.contains("move-window") && document.querySelector("#context-menu").hidden', 'window move canceled');
+  });
+  await check('native close request protects changes when recovery fails', async () => {
+    await execute(`window.__originalIndexedDBOpen = indexedDB.open;
+      indexedDB.open = function() {
+        const request = { error: new DOMException('Simulated unavailable recovery', 'UnknownError') };
+        setTimeout(() => request.onerror?.(new Event('error')), 0);
+        return request;
+      };`);
+    await click('Add note');
+    await execute('document.querySelector("#note-text").value = "Unsaved native close protection"; document.querySelector("#note-submit").click()');
+    await waitFor('return document.querySelector("#save-status").textContent.includes("Recovery unavailable")', 'failed recovery reported');
+    await request('POST', `/session/${session}/execute/async`, {
+      script: `const done = arguments[arguments.length - 1]; window.__TAURI_INTERNALS__.invoke('plugin:window|close', { label: 'main' }).then(() => done(true), error => done(String(error)));`, args: [],
+    });
+    await waitFor('return document.querySelector("#close-dialog").open', 'native close intercepted by recovery guard');
+    await execute('document.querySelector("[data-action=cancel-close]").click()');
+    await waitFor('return !document.querySelector("#close-dialog").open', 'guard canceled');
+    assert.match(await execute('return document.querySelector("#world").textContent'), /Unsaved native close protection/);
+    assert.equal((await request('GET', `/session/${session}/window/handles`)).length, 1);
+    await execute('indexedDB.open = window.__originalIndexedDBOpen; delete window.__originalIndexedDBOpen');
+    await click('Add note');
+    await execute('document.querySelector("#note-text").value = "Recovery restored before close"; document.querySelector("#note-submit").click()');
+    await waitFor('return document.querySelector("#save-status").textContent === "Saved on this device"', 'latest changes recovered');
+  });
+  await check('context menu closes its own native application window', async () => {
+    await rightClickCanvas();
+    await click('Close window').catch(error => {
+      if (!/no such window|invalid session id|web view not found|disconnected/i.test(error.message)) throw error;
+    });
+    let closed = false;
+    for (let attempt = 0; attempt < 50; attempt++) {
+      try { closed = (await request('GET', `/session/${session}/window/handles`)).length === 0; }
+      catch (error) {
+        if (!/no such window|invalid session id|web view not found|disconnected/i.test(error.message)) throw error;
+        closed = true;
+      }
+      if (closed) break;
+      await delay(100);
+    }
+    assert.equal(closed, true);
+  });
   console.log(`${checks} real desktop checks passed.`);
 } catch (error) {
   console.error(driverLog);
