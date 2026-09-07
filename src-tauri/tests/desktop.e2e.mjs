@@ -114,21 +114,34 @@ async function writeNote(text) {
 }
 async function check(name, test) { await test(); checks++; console.log(`PASS ${name}`); }
 async function startClipboardProbe() {
+  const startedAt = Date.now();
+  const diagnostics = { stages: [] };
+  launchDiagnostics.clipboardProbe = diagnostics;
   const child = spawn('pwsh.exe', ['-NoProfile', '-NonInteractive', '-STA', '-File', resolve('src-tauri/tests/clipboard-probe.ps1')], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   let errors = '';
   child.stderr.on('data', chunk => { errors = (errors + chunk).slice(-8000); });
-  const command = async value => {
+  createInterface({ input: child.stderr }).on('line', line => {
+    if (line.startsWith('clipboard-probe:') && diagnostics.stages.length < 32) {
+      diagnostics.stages.push({ stage: line.slice('clipboard-probe:'.length), elapsedMs: Date.now() - startedAt });
+    }
+  });
+  child.on('error', error => { diagnostics.processError = error.code ?? error.name; });
+  child.on('exit', (code, signal) => { diagnostics.exit = { code, signal }; });
+  const command = async (value, timeoutMs = 10_000) => {
     if (value) child.stdin.write(`${value}\n`);
     let timeout;
     try {
-      const line = await Promise.race([lines.next(), new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Windows clipboard probe timed out')), 10_000); })]);
+      const line = await Promise.race([lines.next(), new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error(`Windows clipboard probe ${value ?? 'startup'} timed out after ${timeoutMs}ms; last stage: ${diagnostics.stages.at(-1)?.stage ?? 'process launch'}`)), timeoutMs); })]);
       if (line.done) throw new Error(`Windows clipboard probe exited: ${errors}`);
       return JSON.parse(line.value);
     } finally { clearTimeout(timeout); }
   };
   clipboardProbe = { child, command };
-  const ready = await command();
+  // A clean Windows runner needs time for PowerShell/.NET assembly loading,
+  // first-use interop compilation, and materializing the clipboard backup.
+  const ready = await command(undefined, 60_000);
+  diagnostics.startupMs = Date.now() - startedAt;
   assert.equal(ready.ready, true);
   launchDiagnostics.clipboardBackup = ready;
   return clipboardProbe;
