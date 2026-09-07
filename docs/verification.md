@@ -18,4 +18,4 @@ Browser tests include real PNG/JPEG/WebP/GIF/AVIF decoding, exact-limit 20 MiB i
 
 Production frontend: approximately 50 KB JavaScript and 14 KB CSS before compression, around 20 KB combined after gzip. These sizes exclude imported user images. The final Windows x64 executable is 3,202,560 bytes (3.05 MiB). An NSIS installer and a portable ZIP with license notices were built. Native OS verification and exact coverage limits are recorded in [desktop verification](../src-tauri/tests/README.md).
 
-The workflow is checked in for future runs. Local results do not imply that remote GitHub Actions have run or that macOS/Linux desktop behavior has been verified.
+Clean Windows GitHub Actions validation also passed on 7 September 2026 for commit `d98903a`: [successful run](https://github.com/A7E7-Studios/mind-board/actions/runs/34108858047). This includes the production build, all 130 automated checks, formatting, Clippy, and the actual desktop executable. Native launch diagnostics confirm that the temporary app-specific CI debugging policy was restored. macOS/Linux desktop behavior remains unverified.
