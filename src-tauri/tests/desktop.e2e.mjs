@@ -179,7 +179,7 @@ try {
     await click('Reset zoom');
     const source = await execute(`const canvas = document.createElement('canvas'); canvas.width = 1920; canvas.height = 512;
       const context = canvas.getContext('2d'); context.fillStyle = 'white'; context.fillRect(0, 0, 1920, 512);
-      context.fillStyle = 'black'; for (let x = 0; x < 1920; x += 2) context.fillRect(x, 0, 1, 512);
+      context.fillStyle = 'black'; for (let x = 0; x < 1920; x += 4) context.fillRect(x, 0, 2, 512);
       return canvas.toDataURL('image/png');`);
     const fixture = resolve('src-tauri/.tools/fixtures/native-detail.png');
     writeFileSync(fixture, Buffer.from(source.split(',')[1], 'base64'));
@@ -246,10 +246,11 @@ try {
     writeFileSync('test-results/desktop-image-detail.png', Buffer.from(screenshot, 'base64'));
     launchDiagnostics.imageDetail = detail;
     assert.equal(detail.failure, undefined, detail.failure);
-    // Native window placement can land between physical pixels. Allow that
-    // interpolation while still requiring alternating dark/light detail;
-    // a downsampled placement raster produces uniform gray instead.
-    assert(detail.blackFraction > 0.45 && detail.whiteFraction > 0.45 && detail.adjacentContrast > 180, JSON.stringify(detail));
+    // Two-source-pixel stripes retain solid dark/light interiors across any
+    // fractional placement phase. Quarter-resolution rasterization averages
+    // each complete black/white period to gray, so the negative control still
+    // detects lost detail without depending on physical-pixel alignment.
+    assert(detail.blackFraction > 0.20 && detail.whiteFraction > 0.20 && detail.adjacentContrast > 110, JSON.stringify(detail));
     // Negative control: verify screenshot analysis detects real downsampling.
     await request('POST', `/session/${session}/execute/async`, { script: `const [selector, done] = arguments;
       const image = document.querySelector(selector); const canvas = document.createElement('canvas'); canvas.width = 480; canvas.height = 128;
