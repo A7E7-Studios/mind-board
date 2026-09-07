@@ -8,7 +8,7 @@ Local validation on 7 September 2026, Windows x64.
 | Board model and persistence tests | 61 passed (52 model, 9 IndexedDB) |
 | Playwright end-to-end tests, Microsoft Edge | 51 passed, including 11 minimal/context-menu scenarios |
 | Rust IPC/filesystem tests | 7 passed |
-| Packaged Windows app through Tauri WebDriver | 11 passed, including borderless startup, native window controls, failed-recovery close protection, and IPC permissions |
+| Packaged Windows app through WebDriver | 11 passed, including borderless startup, native window controls, failed-recovery close protection, and IPC permissions |
 | Rust formatting | Passed |
 | Clippy, all targets, warnings denied | Passed |
 | Source formatting | Passed |

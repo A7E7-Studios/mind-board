@@ -6,6 +6,8 @@ An original application inspired by the reference-board workflow: put images on 
 
 ![MindBoard reference canvas](docs/screenshots/populated-board.png)
 
+[Right-click tools](docs/screenshots/context-menu.png) · [Optional full controls](docs/screenshots/full-controls-board.png)
+
 ## Features
 
 - A borderless, plain canvas by default. Right-click for tools; press Tab to reveal the full interface.
@@ -60,7 +62,7 @@ npm run test:desktop
 
 `check` runs TypeScript, a production frontend build, model/storage unit tests, and the Playwright browser suite. Playwright uses installed Microsoft Edge by default. Set `PLAYWRIGHT_CHANNEL=chromium` and run `npx playwright install chromium` to use Playwright's Chromium instead.
 
-`test:native` verifies the actual Rust IPC handlers and filesystem operations. `test:desktop` drives the built Windows application with Tauri WebDriver and a matching EdgeDriver; see [native test setup](src-tauri/tests/README.md). See [testing and coverage](docs/testing.md) for the complete feature matrix and verification limits.
+`test:native` verifies the actual Rust IPC handlers and filesystem operations. `test:desktop` drives the built Windows application through its native WebView with a matching EdgeDriver; see [native test setup](src-tauri/tests/README.md). See [testing and coverage](docs/testing.md) for the complete feature matrix and verification limits.
 
 ## Keyboard shortcuts
 

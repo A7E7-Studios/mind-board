@@ -4,13 +4,20 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const binary = resolve(process.env.MIND_BOARD_BINARY ?? 'src-tauri/target/release/mind-board.exe');
 const driverPath = resolve(process.env.TAURI_DRIVER ?? 'src-tauri/.tools/bin/tauri-driver.exe');
 const edgePath = resolve(process.env.EDGE_DRIVER ?? 'src-tauri/.tools/edge/msedgedriver.exe');
-for (const file of [binary, driverPath, edgePath]) {
+const driverKind = process.env.DESKTOP_DRIVER ?? 'edge';
+assert(['edge', 'tauri'].includes(driverKind), 'DESKTOP_DRIVER must be edge or tauri');
+const elevatedPolicy = process.env.DESKTOP_ELEVATED_POLICY === '1';
+if (elevatedPolicy) {
+  assert.equal(process.env.GITHUB_ACTIONS, 'true', 'Elevated policy is restricted to disposable GitHub Actions runners');
+  assert.equal(basename(binary).toLowerCase(), 'mind-board.exe', 'Elevated policy is scoped to mind-board.exe only');
+}
+for (const file of [binary, edgePath, ...(driverKind === 'tauri' ? [driverPath] : [])]) {
   assert(existsSync(file), `Missing ${file}. See src-tauri/tests/README.md.`);
 }
 const port = Number(process.env.WEBDRIVER_PORT ?? 4444);
@@ -20,24 +27,41 @@ const profile = mkdtempSync(resolve('src-tauri/.tools/profiles/desktop-'));
 // override can send the app to a different directory than the driver watches
 // for DevToolsActivePort, notably across different EdgeDriver versions.
 const driverEnvironment = { ...process.env };
+driverEnvironment.TAURI_AUTOMATION = 'true';
+driverEnvironment.TAURI_WEBVIEW_AUTOMATION = 'true';
 const runtimeFolder = driverEnvironment.WEBVIEW2_BROWSER_EXECUTABLE_FOLDER;
+if (elevatedPolicy) assert(runtimeFolder, 'Elevated CI policy requires an explicit WebView2 runtime folder');
 delete driverEnvironment.WEBVIEW2_USER_DATA_FOLDER;
 delete driverEnvironment.WEBVIEW2_BROWSER_EXECUTABLE_FOLDER;
-const capabilities = { alwaysMatch: { 'tauri:options': {
-  application: binary,
-  webviewOptions: { userDataFolder: profile, ...(runtimeFolder ? { browserExecutableFolder: runtimeFolder } : {}) },
-} } };
+const webviewOptions = {
+  userDataFolder: profile,
+  ...(runtimeFolder ? { browserExecutableFolder: runtimeFolder } : {}),
+  additionalBrowserArguments: ['--enable-logging', `--log-file=${resolve('test-results/webview2.log')}`],
+};
+const capabilities = { alwaysMatch: driverKind === 'edge' ? {
+  browserName: 'webview2', 'ms:edgeChromium': true,
+  'ms:edgeOptions': { binary, args: [], webviewOptions },
+} : { 'tauri:options': { application: binary, webviewOptions } } };
 const versionOf = file => {
   const result = spawnSync(file, ['--version'], { windowsHide: true, encoding: 'utf8', timeout: 5000 });
   return result.error?.message ?? `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
 };
-const launchDiagnostics = { binary, profile, runtimeFolder: runtimeFolder ?? 'installed evergreen runtime', versions: { edgeDriver: versionOf(edgePath) }, tauriDriver: { path: driverPath, sha256: createHash('sha256').update(readFileSync(driverPath)).digest('hex') }, requestedCapabilities: capabilities };
+const selectedDriver = driverKind === 'edge' ? edgePath : driverPath;
+const launchDiagnostics = { binary, profile, driverKind, elevatedPolicy, runtimeFolder: runtimeFolder ?? 'installed evergreen runtime', inheritedAdditionalBrowserArguments: driverEnvironment.WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS ?? null, versions: { edgeDriver: versionOf(edgePath) }, driver: { path: selectedDriver, sha256: createHash('sha256').update(readFileSync(selectedDriver)).digest('hex') }, requestedCapabilities: capabilities };
 mkdirSync('test-results', { recursive: true });
-const driver = spawn(driverPath, ['--port', String(port), '--native-port', String(port + 1), '--native-driver', edgePath], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: driverEnvironment });
+const driverArguments = driverKind === 'edge'
+  ? [`--port=${port}`, '--verbose', `--log-path=${resolve('test-results/edgedriver.log')}`]
+  : ['--port', String(port), '--native-port', String(port + 1), '--native-driver', edgePath];
+let driver;
 let driverLog = '';
-driver.stdout.on('data', chunk => { driverLog += chunk; });
-driver.stderr.on('data', chunk => { driverLog += chunk; });
-driver.on('error', error => { driverLog += `Driver process error: ${error.message}\n`; });
+const policyState = resolve('src-tauri/.tools/policy-backups', `${basename(profile)}.json`);
+function policy(mode) {
+  const result = spawnSync('pwsh.exe', ['-NoProfile', '-NonInteractive', '-File', resolve('src-tauri/tests/elevated-policy.ps1'), '-Mode', mode, '-StatePath', policyState,
+    ...(mode === 'Apply' ? ['-ProfilePath', profile, '-RuntimePath', runtimeFolder, '-BrowserLogPath', resolve('test-results/webview2.log')] : [])],
+  { windowsHide: true, encoding: 'utf8', timeout: 15_000 });
+  driverLog += `${result.stdout ?? ''}${result.stderr ?? ''}`;
+  if (result.error || result.status !== 0) throw new Error(`WebView2 policy ${mode} failed: ${result.error?.message ?? result.stderr}`);
+}
 const endpoint = `http://127.0.0.1:${port}`;
 let session;
 let checks = 0;
@@ -83,6 +107,14 @@ async function rightClickCanvas() {
 async function check(name, test) { await test(); checks++; console.log(`PASS ${name}`); }
 
 try {
+  if (elevatedPolicy) {
+    mkdirSync(resolve('src-tauri/.tools/policy-backups'), { recursive: true });
+    policy('Apply');
+  }
+  driver = spawn(selectedDriver, driverArguments, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'], env: driverEnvironment });
+  driver.stdout.on('data', chunk => { driverLog += chunk; });
+  driver.stderr.on('data', chunk => { driverLog += chunk; });
+  driver.on('error', error => { driverLog += `Driver process error: ${error.message}\n`; });
   for (let attempt = 0; attempt < 100; attempt++) {
     try { await request('GET', '/status'); break; } catch { await delay(100); }
   }
@@ -236,10 +268,16 @@ try {
   console.error(driverLog);
   throw error;
 } finally {
+  if (session) await request('DELETE', `/session/${session}`).catch(() => {});
+  driver?.kill();
+  let cleanupError;
+  if (elevatedPolicy && existsSync(policyState)) {
+    try { policy('Restore'); launchDiagnostics.policyRestored = true; }
+    catch (error) { cleanupError = error; launchDiagnostics.policyRestoreFailure = error.stack; }
+  }
   launchDiagnostics.profileEntries = existsSync(profile) ? readdirSync(profile) : [];
   launchDiagnostics.devToolsActivePortExists = existsSync(resolve(profile, 'EBWebView/DevToolsActivePort'));
   writeFileSync('test-results/desktop-launch.json', JSON.stringify(launchDiagnostics, null, 2));
   writeFileSync('test-results/desktop-driver.log', driverLog);
-  if (session) await request('DELETE', `/session/${session}`).catch(() => {});
-  driver.kill();
+  if (cleanupError) throw cleanupError;
 }
