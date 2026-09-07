@@ -10,6 +10,8 @@ The Windows desktop suite starts the actual application with Microsoft EdgeDrive
 
 Version 0.2.1 adds a thirteenth scenario for empty colored notes and full-height multiline editing. The final `index-DR0Yp1sy.js` build passes all thirteen locally: an empty sage note survives Done, Undo, and Redo, and the tall editor's height, note height, and scroll height all measure 997 pixels without the old half-viewport cap.
 
+Version 0.2.2 adds a fourteenth scenario using an independent STA Windows Forms clipboard consumer. The final `index-BU75BxTV.js` build passed all fourteen locally: real Ctrl+C places a standard image on the OS clipboard, `Clipboard.GetImage()` reads the original 1920×512 pixels outside MindBoard, and real Ctrl+V imports them back. Clipboard backup and restoration happen in memory, with restoration conditional on the clipboard still containing test-owned content. Local restoration succeeded with all seven prior formats retained. No native clipboard permissions or Rust dependencies were added; the application uses the standard [Clipboard API](https://developer.mozilla.org/en-US/docs/Web/API/Clipboard/write).
+
 The optional `DESKTOP_DRIVER=tauri` mode uses a workspace-local Tauri driver:
 
 ```sh

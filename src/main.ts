@@ -14,6 +14,7 @@ import {
   type View,
 } from "./board";
 import { loadRecovery, saveRecovery } from "./storage";
+import { copiedImageFromHtml, copyImage } from "./clipboard";
 import {
   isDesktop,
   openBoardFile,
@@ -44,7 +45,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <button data-action="fullscreen" aria-label="Fullscreen">Fullscreen <kbd>F11</kbd></button>
       ${isDesktop ? '<button data-action="pin" aria-pressed="false">Always on top</button>' : ""}
       <div class="menu-divider"></div><button data-action="help" aria-label="Keyboard shortcuts">Keyboard shortcuts <kbd>?</kbd></button>
-      <p>MindBoard 0.2.1 · MIT licensed</p>
+      <p>MindBoard 0.2.2 · MIT licensed</p>
     </div>
     <section id="canvas" data-testid="canvas" aria-label="Reference board canvas" tabindex="0">
       <div id="world" role="listbox" aria-label="References" aria-multiselectable="true"></div>
@@ -94,6 +95,8 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       ["Select an area", "Drag empty canvas"],
       ["Select all", "Ctrl / ⌘ A"],
       ["Duplicate", "Ctrl / ⌘ D"],
+      ["Copy selected image", "Ctrl / ⌘ C"],
+      ["Paste image or text", "Ctrl / ⌘ V"],
       ["Delete selection", "Delete"],
       ["Undo / redo", "Ctrl / ⌘ Z / Shift Z"],
       ["Fit all references", "F"],
@@ -824,7 +827,9 @@ function showContextMenu(point: { x: number; y: number }, keyboard = false) {
       ? `<div class="context-selection">${entry("Duplicate", "copy", "duplicate", "Ctrl D")}${entry("Delete", "trash", "delete", "Del", locked)}${entry("Arrange", "grid", "arrange")}${entry(locked ? "Unlock selection" : "Lock selection", "lock", "lock")}${entry("Rotate left", "rotate", "rotate-left", "", locked)}${entry("Rotate right", "rotate", "rotate-right", "", locked)}${entry("Bring to front", "front", "front", "", locked)}${entry("Send to back", "back", "back", "", locked)}</div>${divider}`
       : "") +
     (targets.length === 1 && targets[0].kind === "image"
-      ? entry("Original pixels", "image", "original-pixels") + divider
+      ? entry("Copy image", "copy", "copy-image", "Ctrl C") +
+        entry("Original pixels", "image", "original-pixels") +
+        divider
       : "") +
     entry("Import images", "image", "import", "I") +
     entry("Add note", "note", "note", "N") +
@@ -875,6 +880,18 @@ async function action(name: string) {
   }
   try {
     switch (name) {
+      case "copy-image": {
+        const images = history.board.items.filter((item) =>
+          selected.has(item.id),
+        );
+        if (images.length !== 1 || images[0].kind !== "image") {
+          toast("Select one image to copy.");
+          break;
+        }
+        await copyImage(images[0].src!);
+        toast("Image copied. Paste into MindBoard or another app.");
+        break;
+      }
       case "import":
         importPoint = at;
         $<HTMLInputElement>("#image-input").click();
@@ -1042,7 +1059,7 @@ async function action(name: string) {
     }
   } catch (error) {
     toast(
-      `Could not ${name === "open" ? "open board" : name === "save" ? "save board" : "complete action"}: ${(error as Error).message || String(error)}`,
+      `Could not ${name === "open" ? "open board" : name === "save" ? "save board" : name === "copy-image" ? "copy image" : "complete action"}: ${(error as Error).message || String(error)}`,
     );
   }
 }
@@ -1391,6 +1408,14 @@ canvas.addEventListener("drop", (e) => {
 });
 document.addEventListener("paste", (e) => {
   if (isEditing(e.target) || !ready) return;
+  const original = copiedImageFromHtml(
+    e.clipboardData?.getData("text/html") ?? "",
+  );
+  if (original) {
+    e.preventDefault();
+    void importImages([original]);
+    return;
+  }
   const files = Array.from(e.clipboardData?.files ?? []);
   if (files.length) {
     e.preventDefault();
@@ -1459,6 +1484,7 @@ document.addEventListener("keydown", (e) => {
         o: "open",
         n: "new",
         d: "duplicate",
+        c: "copy-image",
         z: e.shiftKey ? "redo" : "undo",
         y: "redo",
         ...(isDesktop ? { q: "close-window" } : {}),

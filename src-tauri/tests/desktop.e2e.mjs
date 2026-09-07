@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFil
 import { createHash } from 'node:crypto';
 import { basename, resolve } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
+import { createInterface } from 'node:readline';
 
 const binary = resolve(process.env.MIND_BOARD_BINARY ?? 'src-tauri/target/release/mind-board.exe');
 const driverPath = resolve(process.env.TAURI_DRIVER ?? 'src-tauri/.tools/bin/tauri-driver.exe');
@@ -53,6 +54,7 @@ const driverArguments = driverKind === 'edge'
   ? [`--port=${port}`, '--verbose', `--log-path=${resolve('test-results/edgedriver.log')}`]
   : ['--port', String(port), '--native-port', String(port + 1), '--native-driver', edgePath];
 let driver;
+let clipboardProbe;
 let driverLog = '';
 const policyState = resolve('src-tauri/.tools/policy-backups', `${basename(profile)}.json`);
 function policy(mode) {
@@ -111,6 +113,26 @@ async function writeNote(text) {
   await waitFor('return !document.querySelector(".note-editor")', 'inline note committed');
 }
 async function check(name, test) { await test(); checks++; console.log(`PASS ${name}`); }
+async function startClipboardProbe() {
+  const child = spawn('pwsh.exe', ['-NoProfile', '-NonInteractive', '-STA', '-File', resolve('src-tauri/tests/clipboard-probe.ps1')], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+  let errors = '';
+  child.stderr.on('data', chunk => { errors = (errors + chunk).slice(-8000); });
+  const command = async value => {
+    if (value) child.stdin.write(`${value}\n`);
+    let timeout;
+    try {
+      const line = await Promise.race([lines.next(), new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Windows clipboard probe timed out')), 10_000); })]);
+      if (line.done) throw new Error(`Windows clipboard probe exited: ${errors}`);
+      return JSON.parse(line.value);
+    } finally { clearTimeout(timeout); }
+  };
+  clipboardProbe = { child, command };
+  const ready = await command();
+  assert.equal(ready.ready, true);
+  launchDiagnostics.clipboardBackup = ready;
+  return clipboardProbe;
+}
 
 try {
   if (elevatedPolicy) {
@@ -133,6 +155,7 @@ try {
   await check('runs as a real Tauri desktop app', async () => {
     assert.equal(await execute('return !!window.__TAURI_INTERNALS__'), true);
     assert.match(await execute('return document.title'), /MindBoard/);
+    launchDiagnostics.clipboardApi = await execute('return { secureContext: isSecureContext, clipboardWrite: typeof navigator.clipboard?.write, clipboardItem: typeof ClipboardItem }');
   });
   await check('starts as a borderless canvas with its optional controls hidden', async () => {
     assert.equal(await execute('return getComputedStyle(document.querySelector(".topbar")).visibility === "hidden" || getComputedStyle(document.querySelector(".topbar")).display === "none"'), true);
@@ -293,6 +316,48 @@ try {
     await execute('document.querySelector(arguments[0]).src = arguments[1]', [imageSelector, source]);
     await click('Fit all');
   });
+  await check('Ctrl+C exposes original image pixels to Windows clipboard consumers and Ctrl+V pastes them', async () => {
+    assert.deepEqual(launchDiagnostics.clipboardApi, { secureContext: true, clipboardWrite: 'function', clipboardItem: 'function' });
+    const probe = await startClipboardProbe();
+    const imageSelector = 'img[alt="native-detail.png"]';
+    const imageCount = await execute('return document.querySelectorAll(".board-item img").length');
+    const point = await execute('const box = document.querySelector(arguments[0]).getBoundingClientRect(); return { x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height / 2) };', [imageSelector]);
+    await request('POST', `/session/${session}/actions`, { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+      { type: 'pointerMove', duration: 0, x: point.x, y: point.y, origin: 'viewport' },
+      { type: 'pointerDown', button: 0 }, { type: 'pointerUp', button: 0 },
+    ] }] });
+    await execute('document.querySelector("#canvas").focus()');
+    const shortcut = key => request('POST', `/session/${session}/actions`, { actions: [{ type: 'key', id: 'keyboard', actions: [
+      { type: 'keyDown', value: '\uE009' }, { type: 'keyDown', value: key }, { type: 'keyUp', value: key }, { type: 'keyUp', value: '\uE009' },
+    ] }] });
+    await shortcut('c');
+    await waitFor('return document.querySelector("#toast").textContent.includes("Image copied")', 'image copied to OS clipboard');
+    const copied = await probe.command('read');
+    await probe.command('claim');
+    assert.equal(copied.image, true, 'Windows Clipboard.GetImage must read the copied PNG');
+    assert.equal(copied.width, 1920);
+    assert.equal(copied.height, 512);
+    const expected = Array.from({ length: 8 }, (_, x) => [x % 4 < 2 ? 0 : 255, x % 4 < 2 ? 0 : 255, x % 4 < 2 ? 0 : 255, 255]).flat();
+    assert(copied.samples.flat().length === expected.length && copied.samples.flat().every((value, index) => value === expected[index]), 'Windows clipboard pixels must match the generated fixture');
+    launchDiagnostics.windowsClipboardImage = copied;
+    await shortcut('v');
+    await waitFor(`return document.querySelectorAll('.board-item img').length === ${imageCount + 1}`, 'native clipboard pasted into board');
+    const pasted = await request('POST', `/session/${session}/execute/async`, {
+      script: `const done = arguments[arguments.length - 1]; (async () => {
+        const image = document.querySelector('.board-item.selected img'); await image.decode();
+        const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
+        const context = canvas.getContext('2d'); context.drawImage(image, 0, 0);
+        return { width: image.naturalWidth, height: image.naturalHeight, samples: Array.from(context.getImageData(0, 20, 8, 1).data) };
+      })().then(done, error => done({ failure: String(error) }));`, args: [],
+    });
+    assert.equal(pasted.width, 1920);
+    assert.equal(pasted.height, 512);
+    assert(pasted.samples.length === expected.length && pasted.samples.every((value, index) => value === expected[index]), 'Pasted clipboard pixels must match the generated fixture');
+    launchDiagnostics.clipboardRestore = await probe.command('restore');
+    probe.child.stdin.end();
+    clipboardProbe = undefined;
+    await click('Fit all');
+  });
   await check('native window permissions work and arbitrary filesystem access is denied', async () => {
     const response = await request('POST', `/session/${session}/execute/async`, {
       script: `const done = arguments[arguments.length - 1]; (async () => {
@@ -391,6 +456,12 @@ try {
   console.error(driverLog);
   throw error;
 } finally {
+  if (clipboardProbe) {
+    try { launchDiagnostics.clipboardRestore = await clipboardProbe.command('restore'); }
+    catch (error) { launchDiagnostics.clipboardRestoreFailure = error.message; }
+    clipboardProbe.child.stdin.end();
+    clipboardProbe.child.kill();
+  }
   if (session) await request('DELETE', `/session/${session}`).catch(() => {});
   driver?.kill();
   let cleanupError;
