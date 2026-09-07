@@ -50,7 +50,7 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <button data-action="fullscreen" aria-label="Fullscreen">Fullscreen <kbd>F11</kbd></button>
       ${isDesktop ? '<button data-action="pin" aria-pressed="false">Always on top</button>' : ""}
       <div class="menu-divider"></div><button data-action="help" aria-label="Keyboard shortcuts">Keyboard shortcuts <kbd>?</kbd></button>
-      <p>MindBoard 0.2.3 · MIT licensed</p>
+      <p>MindBoard 0.2.4 · MIT licensed</p>
     </div>
     <section id="canvas" data-testid="canvas" aria-label="Reference board canvas" tabindex="0">
       <div id="world" role="listbox" aria-label="References" aria-multiselectable="true"></div>
@@ -146,6 +146,7 @@ let windowMoveArmed = false;
 let contextPoint: { x: number; y: number } | null = null;
 let importPoint: { x: number; y: number } | null = null;
 let notePoint: { x: number; y: number } | null = null;
+let mousePosition: { clientX: number; clientY: number } | null = null;
 let pinned = false;
 let fullscreen = false;
 let noteEdit: { item: Item; isNew: boolean; minHeight: number } | null = null;
@@ -246,6 +247,17 @@ function worldPoint(p: { x: number; y: number }) {
 }
 function center() {
   return worldPoint({ x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 });
+}
+function pasteTarget() {
+  if (mousePosition) {
+    const target = document.elementFromPoint(
+      mousePosition.clientX,
+      mousePosition.clientY,
+    );
+    if (target && canvas.contains(target))
+      return worldPoint(localPoint(mousePosition));
+  }
+  return center();
 }
 function renderView() {
   world.style.transform = `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`;
@@ -1429,39 +1441,59 @@ canvas.addEventListener("drop", (e) => {
     worldPoint(localPoint(e)),
   );
 });
+// Keep screen coordinates so zooming or panning does not stale the paste target.
+function trackMouse(e: PointerEvent) {
+  mousePosition =
+    e.pointerType === "mouse"
+      ? { clientX: e.clientX, clientY: e.clientY }
+      : null;
+}
+document.addEventListener("pointermove", trackMouse, true);
+document.addEventListener("pointerdown", trackMouse, true);
+document.addEventListener("pointerout", (e) => {
+  if (!e.relatedTarget) mousePosition = null;
+});
+function pasteNote(note: Item, at: { x: number; y: number }) {
+  if (!finishNote()) return;
+  finishGesture(false);
+  if (history.board.items.length >= 2000) {
+    toast("A board can contain up to 2,000 references.");
+    return;
+  }
+  const item = {
+    ...note,
+    id: crypto.randomUUID(),
+    locked: false,
+    x: at.x - note.width / 2,
+    y: at.y - note.height / 2,
+  };
+  if (commit({ ...history.board, items: [...history.board.items, item] })) {
+    selected = new Set([item.id]);
+    render();
+    canvas.focus({ preventScroll: true });
+  }
+}
 document.addEventListener("paste", (e) => {
   if (isClipboardEditing(e.target) || !ready) return;
+  // Capture once: asynchronous image decoding must not follow later mouse moves.
+  const at = pasteTarget();
   const html = e.clipboardData?.getData("text/html") ?? "";
   const note = copiedNoteFromHtml(html);
   if (note) {
     e.preventDefault();
-    if (!finishNote()) return;
-    finishGesture(false);
-    const p = center();
-    const item = {
-      ...note,
-      id: crypto.randomUUID(),
-      locked: false,
-      x: p.x - note.width / 2 + 24,
-      y: p.y - note.height / 2 + 24,
-    };
-    if (commit({ ...history.board, items: [...history.board.items, item] })) {
-      selected = new Set([item.id]);
-      render();
-      canvas.focus({ preventScroll: true });
-    }
+    pasteNote(note, at);
     return;
   }
   const original = copiedImageFromHtml(html);
   if (original) {
     e.preventDefault();
-    void importImages([original]);
+    void importImages([original], at);
     return;
   }
   const files = Array.from(e.clipboardData?.files ?? []);
   if (files.length) {
     e.preventDefault();
-    void importImages(files);
+    void importImages(files, at);
     return;
   }
   const text = e.clipboardData?.getData("text/plain") ?? "";
@@ -1471,13 +1503,24 @@ document.addEventListener("paste", (e) => {
       toast("A note can contain up to 100,000 characters.");
       return;
     }
-    editNote();
-    if (noteEdit) {
-      const editor = $<HTMLTextAreaElement>(".note-editor");
-      editor.value = text;
-      editor.dispatchEvent(new Event("input", { bubbles: true }));
-      finishNote();
-    }
+    const note: Item = {
+      id: "clipboard",
+      kind: "note",
+      name: text.trim().slice(0, 80),
+      text: text.trim(),
+      x: 0,
+      y: 0,
+      width: 280,
+      height: 280,
+      rotation: 0,
+      locked: false,
+      noteColor: "yellow",
+      noteAlign: "center",
+      noteSize: "medium",
+      noteBold: false,
+    };
+    note.height = Math.max(note.height, noteHeight(note));
+    pasteNote(note, at);
   }
 });
 document.addEventListener("keydown", (e) => {
@@ -1582,6 +1625,7 @@ document.addEventListener("keyup", (e) => {
   }
 });
 window.addEventListener("blur", () => {
+  mousePosition = null;
   finishNote(false, false);
   spaceDown = false;
   canvas.classList.remove("space-pan");

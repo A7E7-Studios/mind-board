@@ -113,6 +113,23 @@ async function writeNote(text) {
   await waitFor('return !document.querySelector(".note-editor")', 'inline note committed');
 }
 async function check(name, test) { await test(); checks++; console.log(`PASS ${name}`); }
+async function movePastePointer(overCanvas) {
+  const positions = await execute(`const canvas = document.querySelector('#canvas').getBoundingClientRect(); const toolbar = document.querySelector('.topbar').getBoundingClientRect();
+    return { pointer: { x: Math.round(canvas.x + canvas.width * 0.27), y: Math.round(canvas.y + canvas.height * 0.37) },
+      outside: { x: Math.round(toolbar.x + toolbar.width / 2), y: Math.round(toolbar.y + toolbar.height / 2) },
+      center: { x: canvas.x + canvas.width / 2, y: canvas.y + canvas.height / 2 } };`);
+  const point = overCanvas ? positions.pointer : positions.outside;
+  await request('POST', `/session/${session}/actions`, { actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions: [
+    { type: 'pointerMove', duration: 0, x: point.x, y: point.y, origin: 'viewport' },
+  ] }] });
+  assert.equal(await execute('return !!document.elementFromPoint(arguments[0], arguments[1])?.closest("#canvas")', [point.x, point.y]), overCanvas, 'Paste pointer must be over the intended surface');
+  return overCanvas ? point : positions.center;
+}
+async function assertPastePosition(expected, kind) {
+  const actual = await execute('const box = document.querySelector(".board-item.selected").getBoundingClientRect(); return { x: box.x + box.width / 2, y: box.y + box.height / 2 };');
+  assert(Math.abs(actual.x - expected.x) < 1 && Math.abs(actual.y - expected.y) < 1, `${kind} paste center mismatch: ${JSON.stringify({ expected, actual })}`);
+  (launchDiagnostics.clipboardPastePositions ??= []).push({ kind, expected, actual });
+}
 async function startClipboardProbe() {
   const startedAt = Date.now();
   const diagnostics = { stages: [] };
@@ -354,8 +371,14 @@ try {
     // Only restore over clipboard content verified to be our own fixture.
     await probe.command('claim');
     launchDiagnostics.windowsClipboardImage = copied;
+    const pointerTarget = await movePastePointer(true);
     await shortcut('v');
     await waitFor(`return document.querySelectorAll('.board-item img').length === ${imageCount + 1}`, 'native clipboard pasted into board');
+    await assertPastePosition(pointerTarget, 'image at pointer');
+    const fallbackTarget = await movePastePointer(false);
+    await shortcut('v');
+    await waitFor(`return document.querySelectorAll('.board-item img').length === ${imageCount + 2}`, 'image pasted with pointer outside canvas');
+    await assertPastePosition(fallbackTarget, 'image at viewport center');
     const pasted = await request('POST', `/session/${session}/execute/async`, {
       script: `const done = arguments[arguments.length - 1]; (async () => {
         const image = document.querySelector('.board-item.selected img'); await image.decode();
@@ -412,8 +435,10 @@ try {
       // A nonempty exact fixture match identifies test-owned clipboard content.
       // For empty text, also verify the structured note paste before claiming.
       if (!empty) await probe.command('claim');
+      const pasteTarget = await movePastePointer(!empty);
       await shortcut('v');
       await waitFor(`return document.querySelectorAll('.board-item.note').length === ${count + 1}`, 'copied note pasted into board');
+      await assertPastePosition(pasteTarget, empty ? 'empty note at viewport center' : 'formatted note at pointer');
       const pasted = await selectedNote();
       assert(JSON.stringify(pasted) === JSON.stringify(expected), 'Pasted note must preserve fixture text, formatting, and dimensions');
       if (empty) await probe.command('claim');

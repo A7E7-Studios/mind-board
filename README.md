@@ -16,6 +16,7 @@ An original application inspired by the reference-board workflow: put images on 
 - Import multiple PNG, JPEG, WebP, GIF, or AVIF images; drag files onto the canvas or paste clipboard images.
 - Select an image and press Ctrl+C (or right-click → Copy image), then paste it into MindBoard or another app that accepts images. Copying retains the original resolution and transparency.
 - Copy a selected note with Ctrl+C or right-click → Copy note. Pasting into MindBoard preserves its color, styling, size, and rotation, including empty notes; other apps receive its text.
+- Pasted images, notes, and text appear at the mouse position over the canvas. If no canvas mouse position is available, they appear in the center of the view.
 - Pan with Space + drag or the middle mouse button; zoom around the cursor with the wheel.
 - Images retain their original pixels when resized. Zoom in to see the detail; double-click an image for a one-to-one pixel view.
 - Select, Shift-select, marquee-select, move, proportionally resize, rotate, arrange, duplicate, and reorder references.
